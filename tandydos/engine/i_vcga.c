@@ -19,7 +19,7 @@
  *  02111-1307, USA.
  *
  * DESCRIPTION:
- *      Video code for CGA 320x200 4 color
+ *      Packed CGA 320x200 and Tandy 160x200 video
  *
  *-----------------------------------------------------------------------------*/
 
@@ -63,6 +63,9 @@ void I_ReloadPalette(void)
 }
 
 
+static int8_t pal;
+
+#if !defined VIDEO_MODE_TANDY
 typedef enum
 {
 	MDA,
@@ -122,6 +125,8 @@ static videocardsenum_t I_DetectVideoCard(void)
 }
 
 
+#endif
+
 static const int8_t colors[14] =
 {
 	0,							// normal
@@ -131,6 +136,15 @@ static const int8_t colors[14] =
 };
 
 
+#if defined VIDEO_MODE_TANDY
+static void I_UploadNewPalette(void)
+{
+	union REGS regs;
+	regs.w.ax = 0x0b00;
+	regs.w.bx = 0x10 | colors[pal];
+	int86(0x10, &regs, &regs);
+}
+#else
 static const uint8_t colorsNonCGA[6][3] =
 {
 	{11, 13, 15}, // light cyan, light magenta, white
@@ -143,7 +157,6 @@ static const uint8_t colorsNonCGA[6][3] =
 
 
 static int16_t palette;
-static int8_t pal;
 
 
 static void I_SetPaletteNonCGA(uint8_t paletteRegisterNumber, uint8_t color)
@@ -201,13 +214,25 @@ void I_SwitchPalette(void)
 }
 
 
+#endif /* CGA palette switching */
+
 void I_InitGraphicsHardwareSpecificCode(void)
 {
 	__djgpp_nearptr_enable();
-
+#if defined VIDEO_MODE_TANDY
+	union REGS regs;
+	I_SetScreenMode(8);
+	regs.h.ah = 0x0f;
+	int86(0x10, &regs, &regs);
+	if ((regs.h.al & 0x7f) != 8)
+	{
+		I_SetScreenMode(3);
+		I_Error("Tandy mode 08h unavailable. Run DOOMCGA on this adapter.");
+	}
+#else
 	videocard = I_DetectVideoCard();
-
 	I_SetScreenMode(4);
+#endif
 
 	videomemory = D_MK_FP(0xb800, (((SCREENHEIGHT_CGA - SCREENHEIGHT) / 2) / 2) * PLANEWIDTH + (PLANEWIDTH - VIEWWINDOWWIDTH) / 2 + __djgpp_conventional_base);
 
@@ -483,7 +508,15 @@ void V_ShutdownDrawLine(void)
 }
 
 
+// UI coordinates are 240 pixels wide in both builds. In mode 08h each
+// adjacent pair of UI coordinates shares one physical four-bit pixel.
+#if defined VIDEO_MODE_TANDY
+static const uint8_t bitmasks[4] = {0x0f, 0x0f, 0xf0, 0xf0};
+#define PIXEL_BITS(color, lane) ((color) & (uint8_t)~bitmasks[lane])
+#else
 static const uint8_t bitmasks[4] = {0x3f, 0xcf, 0xf3, 0xfc};
+#define PIXEL_BITS(color, lane) ((color) >> ((lane) * 2))
+#endif
 
 
 void V_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color)
@@ -502,7 +535,7 @@ void V_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color)
 	while (true)
 	{
 		uint8_t c = _s_screen[y0 * VIEWWINDOWWIDTH + (x0 >> 2)];
-		_s_screen[y0 * VIEWWINDOWWIDTH + (x0 >> 2)] = (c & bitmask) | (color >> (p * 2));
+		_s_screen[y0 * VIEWWINDOWWIDTH + (x0 >> 2)] = (c & bitmask) | PIXEL_BITS(color, p);
 
 		if (x0 == x1 && y0 == y1)
 			break;
@@ -606,42 +639,42 @@ void V_DrawPatchNotScaled(int16_t x, int16_t y, const patch_t __far* patch)
 
 			if (count == 7)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2));
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 3)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2));
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 5)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2));
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 6)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2));
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else
 			{
 				while (count--)
 				{
-					c = *dest; color = *source++; *dest = (c & bitmask) | (color >> (p * 2)); dest += VIEWWINDOWWIDTH;
+					c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
 				}
 			}
 
@@ -708,7 +741,7 @@ void V_DrawPatchScaled(int16_t x, int16_t y, const patch_t __far* patch)
 			{
 				uint8_t c = *dest;
 				uint8_t color = source[frac >> 8];
-				*dest = (c & bitmask) | (color >> (p * 2));
+				*dest = (c & bitmask) | PIXEL_BITS(color, p);
 				dest += VIEWWINDOWWIDTH;
 				frac += DYI;
 			}

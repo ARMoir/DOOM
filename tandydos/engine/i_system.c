@@ -361,3 +361,13 @@ void I_Error (const char *error, ...)
 	printf("\n");
 	exit(1);
 }
+
+void I_EndTimedemo(uint32_t gametics, uint32_t realtics)
+{
+	uint32_t fps = realtics ? TICRATE * 1000UL * gametics / realtics : 0;
+	I_Shutdown();
+	printf("Timed %lu gametics in %lu realtics = %lu.%03lu frames per second\n",
+	       (unsigned long)gametics, (unsigned long)realtics,
+	       (unsigned long)(fps / 1000), (unsigned long)(fps % 1000));
+	exit(0);
+}

@@ -542,6 +542,8 @@ static void P_FreeLevelData()
     R_ResetPlanes();
 #endif
 
+    // Unlink active lift nodes before releasing their level allocation.
+    P_RemoveAllActivePlats();
     Z_FreeTags();
 }
 

@@ -42,6 +42,7 @@ void I_InitTimer(void);
 int32_t I_GetTime(void);
 
 _Noreturn void I_Quit(void);
+_Noreturn void I_EndTimedemo(uint32_t gametics, uint32_t realtics);
 _Noreturn void I_Error(const char *error, ...);
 
 void I_InitKeyboard(void);

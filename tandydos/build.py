@@ -10,6 +10,8 @@ import tempfile
 PORT = Path(__file__).resolve().parent
 ENGINE = PORT / "engine"
 MODES = {
+    "tandy": ("DOOMTGA", "i_vcga", ["VIDEO_MODE_TANDY", "NR_OF_COLORS=16",
+                                     "FLAT_NUKAGE1_COLOR=32", "FLAT_SKY_COLOR=7"]),
     "cga": ("DOOMCGA", "i_vcga", ["VIDEO_MODE_CGA", "NR_OF_COLORS=4",
                                    "FLAT_NUKAGE1_COLOR=65", "FLAT_SKY_COLOR=3"]),
     "vga": ("DOOMVGA", "i_vvga13", []),

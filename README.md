@@ -1,18 +1,21 @@
 # DOOM for the Tandy 1000 EX
 
-This fork builds single-player DOOM Episode 1 for real-mode DOS on an 8088, 8086 or NEC V20. Start with the CGA build on a Tandy 1000 EX with expanded conventional RAM. The VGA build uses BIOS mode 13h and requires a VGA-compatible adapter. Both include the automap, monsters, weapons and PC speaker sound effects.
+This fork builds single-player DOOM Episode 1 for real-mode DOS on an 8088, 8086 or NEC V20. On a Tandy 1000 EX with 640 KB installed, start with `DOOMTGA` for native 16-color graphics. The game includes monsters, weapons, the automap and PC speaker effects.
+
+Download the newest **DOOM-DOS** artifact from [DOS build on GitHub Actions](https://github.com/ARMoir/DOOM/actions/workflows/dos-build.yml), unzip it to a single directory on the CompactFlash card, and run the program for your adapter. The artifact contains the prepared Episode 1 game data. Each push builds from source and plays the recorded demo on all three adapters before publishing. Once the upload succeeds, the workflow removes its older DOS artifacts.
 
 | DOS program | Video output | Required game data |
 | --- | --- | --- |
+| `DOOMTGA.EXE` | Tandy BIOS mode 08h, 160×200, 16 RGBI colors. | `DOOMT16.WAD` |
 | `DOOMCGA.EXE` | CGA 320×200, four colors. F5 cycles palettes. | `DOOM4.WAD` |
 | `DOOMVGA.EXE` | VGA 320×200, 256 colors. | `DOOM1.WAD` |
 
-Copy an executable from [tandydos/bin](tandydos/bin) and the matching **preprocessed** WAD into the same DOS directory. Get the WAD from the corresponding [Doom8088 CGA or VGA release archive](https://github.com/FrenkelS/Doom8088/releases/tag/v20260304). A stock DOOM shareware IWAD has a different internal layout.
+To prepare the same folder on a modern PC with Python 3, run `python tandydos/prepare.py --out DOOMDOS` from a checkout. To prepare only the EX version, add `--mode tandy`. The script copies the [prebuilt executables](tandydos/bin), verifies the [upstream shareware archives](https://github.com/FrenkelS/Doom8088/releases/tag/v20260304), and packs the native Tandy artwork. With existing release ZIPs, pass `--archives DIRECTORY`.
 
-Run `DOOMCGA` or `DOOMVGA`. Use the arrows to move, Ctrl to fire, Space to open doors, Tab for the automap, and F10 to return to DOS. For a repeatable measurement, run `DOOMCGA -timedemo demo3`. The benchmark prints its frame rate at the DOS prompt. Episode 1 uses flat floors and ceilings. Savegames, music, multiplayer and later episodes are outside this build.
+Use the arrows to move, Ctrl to fire, Space to open doors, Tab for the automap, and F10 to return to DOS. To measure your EX, run `DOOMTGA -timedemo demo3` and compare with `DOOMCGA -timedemo demo3`. The benchmark prints its frame rate at the DOS prompt. Episode 1 uses flat floors and ceilings. The port omits savegames, music, multiplayer and later episodes.
 
 ## Building
 
 Install Open Watcom v2 and Python 3 on a modern host. Set `WATCOM` to the compiler installation directory and run `python tandydos/build.py` from the repository root. It builds DOS MZ executables with the medium memory model and 8086 instruction set. Each target has its own compile and link directory.
 
-The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) is the reference for the Tandy display layout and offline color preparation. Source notices are retained in [tandydos/engine](tandydos/engine).
+The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. The Tandy backend follows [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) in selecting BIOS mode 08h and blitting packed scanlines to the two banks at B800h. The 3D view uses 60 textured columns and a 9,600-byte packed screen buffer. The desktop converter prepares the title, status bar, intermission and finale pictures before they reach the XT. Source notices are retained in [tandydos/engine](tandydos/engine).

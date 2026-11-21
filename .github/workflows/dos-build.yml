@@ -1,0 +1,108 @@
+name: DOS build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    outputs:
+      artifact-id: ${{ steps.publish.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache the compiler and DOSBox-X
+        uses: actions/cache@v4
+        id: tools
+        with:
+          path: .dos-tools
+          key: doom-watcom-2026-11-01-dosbox-x-2026-10-01-v1
+
+      - name: Install verified portable tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force .dos-tools | Out-Null
+          $compiler = Join-Path $env:RUNNER_TEMP 'watcom.exe'
+          $emulator = Join-Path $env:RUNNER_TEMP 'dosbox-x.zip'
+          Invoke-WebRequest 'https://github.com/open-watcom/open-watcom-v2/releases/download/2026-11-01-Build/open-watcom-2_0-c-win-x64.exe' -OutFile $compiler
+          if ((Get-FileHash $compiler).Hash -ne 'D4E496C593EF2ACBC54D1EAEB31B31D9C62F86E39A09E61ADA411EF34FEAA01A') { throw 'Compiler checksum mismatch' }
+          python -m zipfile -e $compiler .dos-tools/watcom
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Invoke-WebRequest 'https://github.com/joncampbell123/dosbox-x/releases/download/dosbox-x-v2026.10.01/dosbox-x-mingw64-2026.10.01-portable.zip' -OutFile $emulator
+          if ((Get-FileHash $emulator).Hash -ne 'DEF2D84D4415FC26C77252839B4DAFB6B476E3A4204B896292E6B05505CA8C59') { throw 'Emulator checksum mismatch' }
+          python -m zipfile -e $emulator .dos-tools/dosbox
+
+      - name: Compile the pushed revision for 8088 DOS
+        shell: pwsh
+        run: python tandydos/build.py --watcom .dos-tools/watcom --out build/exe
+
+      - name: Prepare the shareware episode and the CompactFlash directory
+        run: python tandydos/prepare.py --bin build/exe --out build/DOOMDOS
+
+      - name: Play demo3 on Tandy, CGA and VGA in real-mode DOS
+        run: python tandydos/smoke.py --emulator .dos-tools/dosbox/mingw-build/mingw-sdl2/dosbox-x.exe --game build/DOOMDOS
+
+      - name: Publish playable DOS build
+        id: publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: DOOM-DOS-${{ github.run_number }}-${{ github.run_attempt }}
+          path: build/DOOMDOS/
+          if-no-files-found: error
+
+  prune:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    # Serialize only housekeeping. Every push still gets its own build.
+    concurrency:
+      group: doom-dos-artifact-cleanup
+      cancel-in-progress: false
+    steps:
+      - name: Keep the newest verified build from this workflow
+        uses: actions/github-script@v7
+        env:
+          PUBLISHED_ID: ${{ needs.build.outputs.artifact-id }}
+        with:
+          script: |
+            const repo = context.repo;
+            const current = (await github.rest.actions.getWorkflowRun({
+              ...repo, run_id: context.runId
+            })).data;
+            const published = (await github.rest.actions.getArtifact({
+              ...repo, artifact_id: Number(process.env.PUBLISHED_ID)
+            })).data;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              ...repo, per_page: 100
+            });
+            const builds = new Map();
+            for (const artifact of [published, ...artifacts]) {
+              const match = /^DOOM-DOS-(\d+)-(\d+)$/.exec(artifact.name);
+              if (!match || artifact.expired || builds.has(artifact.id)) continue;
+              const runId = artifact.workflow_run?.id;
+              if (!runId) continue;
+              const run = runId === current.id ? current : (await github.rest.actions.getWorkflowRun({
+                ...repo, run_id: runId
+              })).data;
+              if (run.workflow_id !== current.workflow_id || run.run_number !== Number(match[1])) continue;
+              builds.set(artifact.id, { id: artifact.id, number: run.run_number, attempt: Number(match[2]) });
+            }
+            if (!builds.has(published.id)) throw new Error('Cannot identify the uploaded DOS build');
+            const [keep, ...older] = [...builds.values()].sort((a, b) =>
+              b.number - a.number || b.attempt - a.attempt || b.id - a.id);
+            core.info(`Keeping DOS build ${keep.number}, attempt ${keep.attempt}`);
+            for (const artifact of older) {
+              await github.rest.actions.deleteArtifact({ ...repo, artifact_id: artifact.id });
+              core.info(`Deleted DOS build ${artifact.number}, attempt ${artifact.attempt}`);
+            }

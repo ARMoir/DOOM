@@ -165,7 +165,7 @@ typedef struct
 } wadinfo_t;
 
 #if defined VIDEO_MODE_TANDY
-#define WAD_FILE "DOOM16D.WAD"
+#define WAD_FILE "DOOMT16.WAD"
 #elif defined VIDEO_MODE_CGA
 #define WAD_FILE "DOOM4.WAD"
 #elif !defined WAD_FILE

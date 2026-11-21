@@ -1,0 +1,25 @@
+DOOM FOR TANDY 1000 AND DOS
+
+Copy the game files into one directory on your DOS disk. Change to it
+before starting the game. Use an expanded Tandy 1000 EX or a DOS PC
+with 640 KB installed. Close memory-resident programs to free RAM.
+
+  DOOMTGA   Tandy 1000 built-in video, 160 x 200, 16 colors
+  DOOMCGA   CGA or Tandy, 320 x 200, 4 colors (F5 changes palette)
+  DOOMVGA   VGA adapter, mode 13h, 256 colors
+
+Arrows move and turn. Ctrl fires. Space or Enter opens doors. Alt strafes.
+Shift runs. Tab shows the automap. Brackets switch weapons. Esc opens
+the menu. F10 exits to DOS.
+
+To benchmark the EX, run:
+  DOOMTGA -timedemo demo3
+
+The result at the DOS prompt is the average for this machine and adapter.
+The executable can also read game data straight from disk with -noems
+and -noxms. -nosound disables sound effects.
+
+Requires the matching prepared DOOMT16.WAD, DOOM4.WAD or DOOM1.WAD.
+The game data are the DOOM shareware episode. Engine source and license:
+https://github.com/ARMoir/DOOM/tree/master/tandydos
+https://github.com/FrenkelS/Doom8088
