@@ -1,8 +1,8 @@
 @echo off
-echo Timing the first 96 demo frames in each native Tandy renderer...
-DOOMTGA -timedemo demo3 -quick > FAST.LOG
+echo Timing the first 96 demo frames in both Tandy modes...
+DOOM -tandy -timedemo demo3 -quick > FAST.LOG
 if errorlevel 1 goto failed
-DOOMTGH -timedemo demo3 -quick > FULL.LOG
+DOOM -tandyhi -timedemo demo3 -quick > FULL.LOG
 if errorlevel 1 goto failed
 echo Fast:
 find "Timed " FAST.LOG

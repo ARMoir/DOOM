@@ -20,6 +20,32 @@ MODES = {
 }
 
 
+def build_launcher(watcom, output):
+    """Create the one public DOS executable that selects the overlays."""
+    env = os.environ.copy()
+    env["WATCOM"] = str(watcom)
+    host_dirs = [watcom / p for p in ("binnt64", "binnt")] if os.name == "nt" else [
+        watcom / p for p in ("binl64", "binl")]
+    env["PATH"] = os.pathsep.join([*(str(p) for p in host_dirs), env["PATH"]])
+    env["INCLUDE"] = str(watcom / "h")
+    cc = shutil.which("wcc", path=env["PATH"])
+    linker = shutil.which("wlink", path=env["PATH"])
+    if not cc or not linker:
+        raise SystemExit("Open Watcom v2 missing")
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="doomselect-") as scratch:
+        subprocess.run([cc, "-bt=dos", "-0", "-ms", "-zp1", "-j", "-s", "-ox",
+                        "-os", "-za99", "-zq", "-fo=selector.obj",
+                        str(PORT / "selector.c")],
+                       cwd=scratch, env=env, check=True)
+        Path(scratch, "link.lnk").write_text(
+            "format dos\noption quiet\noption stack=2048\nname DOOM.EXE\nfile selector.obj\n",
+            encoding="ascii")
+        subprocess.run([linker, "@link.lnk"], cwd=scratch, env=env, check=True)
+        shutil.copyfile(Path(scratch, "DOOM.EXE"), output / "DOOM.EXE")
+    print("Built", output / "DOOM.EXE", flush=True)
+
+
 def build(mode, watcom, output):
     name, driver, defines = MODES[mode]
     env = os.environ.copy()
@@ -67,3 +93,4 @@ if __name__ == "__main__":
         if selected not in MODES:
             parser.error("unknown mode " + selected)
         build(selected, Path(args.watcom).resolve(), args.out.resolve())
+    build_launcher(Path(args.watcom).resolve(), args.out.resolve())
