@@ -4,8 +4,8 @@ Copy the game files into one directory on your DOS disk. Change to it
 before starting the game. Use an expanded Tandy 1000 EX or a DOS PC
 with 640 KB installed. Close memory-resident programs to free RAM.
 
-  DOOMTGA   Tandy 1000 built-in video, 160 x 200, 16 colors
-  DOOMTGH   Same Tandy adapter and WAD, higher 3D detail
+  DOOMTGA   Tandy mode 08h fullscreen 160 x 200, 16 RGBI colors
+  DOOMTGH   Same fullscreen mode with higher-detail 3D renderer
   DOOMCGA   CGA or Tandy, 320 x 200, 4 colors (F5 changes palette)
   DOOMVGA   VGA adapter, mode 13h, 256 colors
 
@@ -18,6 +18,11 @@ To compare both renderers on your EX, run BENCH. It times the same
   DOOMTGA -timedemo demo3
 
 The result at the DOS prompt is the average for this machine and adapter.
+The native Tandy modes stretch the 120 x 160 internal display to fill
+all 160 x 200 hardware pixels, preserving the 16 RGBI palette entries.
+Use DOOMTGA with DOOMT16.WAD, not DOOMCGA with DOOM4.WAD, for
+16-color graphics. F5 only cycles palettes in the 4-color CGA build.
+
 The executable can also read game data straight from disk with -noems
 and -noxms. -nosound disables sound effects.
 

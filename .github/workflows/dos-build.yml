@@ -51,6 +51,9 @@ jobs:
           if ((Get-FileHash $emulator).Hash -ne 'DEF2D84D4415FC26C77252839B4DAFB6B476E3A4204B896292E6B05505CA8C59') { throw 'Emulator checksum mismatch' }
           python -m zipfile -e $emulator .dos-tools/dosbox
 
+      - name: Check native Tandy fullscreen scaling geometry
+        run: python -m unittest discover -s tandydos/tests -p "test_*.py"
+
       - name: Compile the pushed revision for 8088 DOS
         shell: pwsh
         run: python tandydos/build.py --watcom .dos-tools/watcom --out build/exe

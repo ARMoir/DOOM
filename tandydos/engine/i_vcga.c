@@ -42,6 +42,12 @@
 #define PLANEWIDTH        80
 #define PACKED_STRIDE      60
 #define BYTES_PER_COLUMN   (PACKED_STRIDE / VIEWWINDOWWIDTH)
+#if defined VIDEO_MODE_TANDY && PACKED_STRIDE != 60
+#error Native Tandy fullscreen blitter requires 60 packed source bytes per row
+#endif
+#if defined VIDEO_MODE_TANDY && SCREENHEIGHT != 160
+#error Native Tandy fullscreen blitter requires 160 source scanlines
+#endif
 // The experimental asm paths must be checked against a working 8086 timedemo
 // before enabling. The C fallback keeps the 30-column packed renderer.
 #define SCREENHEIGHT_CGA 200
@@ -141,11 +147,29 @@ static const int8_t colors[14] =
 
 
 #if defined VIDEO_MODE_TANDY
+// Tandy 1000 BIOS: INT 10h AX=1000h, BL=palette register,
+// BH=4-bit RGBI value. Keep every native 16-color entry active.
+// Do not use the CGA (AH=0Bh) 4-color palette operation here.
+static void I_SetTandyRGBIPalette(void)
+{
+	union REGS regs;
+	uint8_t index;
+	for (index = 0; index < 16; ++index)
+	{
+		regs.w.ax = 0x1000;
+		regs.h.bl = index;
+		regs.h.bh = index;
+		int86(0x10, &regs, &regs);
+	}
+}
+
 static void I_UploadNewPalette(void)
 {
 	union REGS regs;
-	regs.w.ax = 0x0b00;
-	regs.w.bx = 0x10 | colors[pal];
+	// Preserve the 16 distinct RGBI entries; use the border as the
+	// damage/bonus indicator rather than tinting the actual game.
+	regs.w.ax = 0x1001;
+	regs.h.bh = (uint8_t)colors[pal];
 	int86(0x10, &regs, &regs);
 }
 #else
@@ -233,12 +257,20 @@ void I_InitGraphicsHardwareSpecificCode(void)
 		I_SetScreenMode(3);
 		I_Error("Tandy mode 08h unavailable. Run DOOMCGA on this adapter.");
 	}
+	I_SetTandyRGBIPalette();
 #else
 	videocard = I_DetectVideoCard();
 	I_SetScreenMode(4);
 #endif
 
+
+#if defined VIDEO_MODE_TANDY
+	// Fill the complete hardware 160 x 200 image (80 bytes per scanline).
+	videomemory = D_MK_FP(0xb800, __djgpp_conventional_base);
+#else
+	// CGA retains the original centered 240 x 160 presentation.
 	videomemory = D_MK_FP(0xb800, (((SCREENHEIGHT_CGA - SCREENHEIGHT) / 2) / 2) * PLANEWIDTH + (PLANEWIDTH - PACKED_STRIDE) / 2 + __djgpp_conventional_base);
+#endif
 
 	_s_screen = Z_MallocStatic(PACKED_STRIDE * SCREENHEIGHT);
 	_fmemset(_s_screen, 0, PACKED_STRIDE * SCREENHEIGHT);
@@ -265,9 +297,59 @@ static void XT_CopyRows(const uint8_t __far* src, uint8_t __far* dst, uint16_t p
 	parm [dx si] [ax di] [bx] modify [bx cx si di];
 #endif
 
+// Expand six source RGBI pixels (three packed bytes) to eight Tandy
+// pixels (four packed bytes). Nearest-neighbor 4:3 stretch retains the
+// current low-resolution Doom renderer and avoids additional BSP work.
+#if defined VIDEO_MODE_TANDY
+static void TandyExpandRow(const uint8_t __far* src, uint8_t* out)
+{
+	uint16_t x;
+	for (x = 0; x < PACKED_STRIDE; x += 3)
+	{
+		const uint8_t a = src[0], b = src[1], c = src[2];
+		out[0] = (a & 0xf0) | (a >> 4);                   // p0,p0
+		out[1] = (uint8_t)((a << 4) | (b >> 4));          // p1,p2
+		out[2] = (uint8_t)((b & 0x0f) * 0x11u);           // p3,p3
+		out[3] = c;                                       // p4,p5
+		src += 3;
+		out += 4;
+	}
+}
+#endif
+
 static void I_DrawBuffer(uint8_t __far* buffer)
 {
-#if defined __WATCOMC__ && defined _M_I86 && defined XT_EXPERIMENTAL_ASM
+#if defined VIDEO_MODE_TANDY
+	// Source is 120 x 160 RGBI; destination is the native 160 x 200
+	// two-bank mode 08h framebuffer. Every fourth input row is repeated.
+	// The status bar begins at row 128, mapping exactly to output row 160.
+	uint8_t expandedRow[PLANEWIDTH];
+	const uint8_t __far* src = buffer;
+	uint8_t __far* even = videomemory;
+	uint8_t __far* odd = videomemory + 0x2000;
+	const uint16_t height = drawStatusBar ? SCREENHEIGHT : SCREENHEIGHT - ST_HEIGHT;
+	uint16_t y, dstY = 0;
+	for (y = 0; y < height; ++y)
+	{
+		uint8_t repeat = (y & 3) == 0 ? 2 : 1;
+		TandyExpandRow(src, expandedRow);
+		do
+		{
+			if (dstY & 1)
+			{
+				_fmemcpy(odd, expandedRow, PLANEWIDTH);
+				odd += PLANEWIDTH;
+			}
+			else
+			{
+				_fmemcpy(even, expandedRow, PLANEWIDTH);
+				even += PLANEWIDTH;
+			}
+			++dstY;
+		} while (--repeat);
+		src += PACKED_STRIDE;
+	}
+#elif defined __WATCOMC__ && defined _M_I86 && defined XT_EXPERIMENTAL_ASM
 	uint16_t height = drawStatusBar ? SCREENHEIGHT : SCREENHEIGHT - ST_HEIGHT;
 	XT_CopyRows(buffer, videomemory, height / 2);
 #else

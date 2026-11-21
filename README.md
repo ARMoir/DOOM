@@ -1,13 +1,13 @@
 # DOOM for the Tandy 1000 EX
 
-This fork builds single-player DOOM Episode 1 for real-mode DOS on an 8088, 8086 or NEC V20. On a Tandy 1000 EX with 640 KB installed, start with `DOOMTGA` for native 16-color graphics. The game includes monsters, weapons, the automap and PC speaker effects.
+This fork builds single-player DOOM Episode 1 for real-mode DOS on an 8088, 8086 or NEC V20. On a Tandy 1000 EX with 640 KB installed, start with `DOOMTGA` and `DOOMT16.WAD` for fullscreen native 16-color graphics (do not run the 4-color CGA build). The game includes monsters, weapons, the automap and PC speaker effects.
 
 Download the newest **DOOM-DOS.zip** from [GitHub Releases](https://github.com/ARMoir/DOOM/releases/latest), unzip it to a single directory on the CompactFlash card, and run the program for your adapter. Each push to `master` compiles all four executables from source, runs a **96-tic smoke test** in DOSBox-X for each adapter, and publishes a new downloadable DOS release. Only after the new ZIP is confirmed does the workflow delete older releases and obsolete DOOM-DOS Actions artifacts. For the longer emulator check, use `python tandydos/smoke.py --emulator PATH --game DIRECTORY --full`.
 
 | DOS program | Video output | Required game data |
 | --- | --- | --- |
-| `DOOMTGA.EXE` | Tandy BIOS mode 08h, 160×200, 16 RGBI colors. | `DOOMT16.WAD` |
-| `DOOMTGH.EXE` | Same Tandy mode, 60-column higher-detail view. | `DOOMT16.WAD` |
+| `DOOMTGA.EXE` | Fullscreen Tandy BIOS mode 08h, 160×200, native 16-color RGBI (fast 30-column renderer). | `DOOMT16.WAD` |
+| `DOOMTGH.EXE` | Same fullscreen Tandy mode, 60-column higher-detail view. | `DOOMT16.WAD` |
 | `DOOMCGA.EXE` | CGA 320×200, four colors. F5 cycles palettes. | `DOOM4.WAD` |
 | `DOOMVGA.EXE` | VGA 320×200, 256 colors. | `DOOM1.WAD` |
 
@@ -19,7 +19,7 @@ Use the arrows to move, Ctrl to fire, Space to open doors, Tab for the automap, 
 
 Install Open Watcom v2 and Python 3 on a modern host. Set `WATCOM` to the compiler installation directory and run `python tandydos/build.py` from the repository root. It builds DOS MZ executables with the medium memory model and 8086 instruction set. Each target has its own compile and link directory.
 
-The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. The Tandy backend follows [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) in selecting BIOS mode 08h and blitting packed scanlines to the two banks at B800h. DOOMTGA and DOOMCGA project 30 columns and shade two rows per texture sample. DOOMTGH projects 60 columns at full vertical detail. Both Tandy builds keep a 9,600-byte packed buffer and copy it to the interleaved display banks with the tested C blitter. Experimental 8086 blit/texture-scaler assembly is retained in the source but disabled because it has not passed the 8086 smoke test. Run `BENCH.BAT` on your EX to compare the same 96 game tics in both native modes. The slower CI comparison uses DOSBox-X at 400 fixed cycles per millisecond. That setting measures relative speed and has no precise MHz equivalence. The desktop converter prepares the title, status bar, intermission and finale pictures before they reach the XT. Source notices are retained in [tandydos/engine](tandydos/engine).
+The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. The Tandy backend follows [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) in selecting BIOS mode 08h and blitting packed scanlines to the two banks at B800h. DOOMTGA and DOOMCGA project 30 columns and shade two rows per texture sample. DOOMTGH projects 60 columns at full vertical detail. Both Tandy builds keep a 9,600-byte packed buffer, then stretch each 120-pixel RGBI row to 160 pixels and each 160-row frame to 200 rows as they copy it to the Tandy mode 08h interleaved video banks. This fills the physical CRT at the cost of extra copy work; the 3D renderer still processes only 30 or 60 columns. Each of the 16 palette registers is explicitly set to its canonical 4-bit RGBI value with Tandy BIOS INT 10h AX=1000h; damage/bonus border effects use AX=1001h without reducing in-game color depth. Experimental 8086 blit/texture-scaler assembly is retained in the source but disabled because it has not passed the 8086 smoke test. Run `BENCH.BAT` on your EX to compare the same 96 game tics in both native modes. The slower CI comparison uses DOSBox-X at 400 fixed cycles per millisecond. That setting measures relative speed and has no precise MHz equivalence. The desktop converter prepares the title, status bar, intermission and finale pictures before they reach the XT. Source notices are retained in [tandydos/engine](tandydos/engine).
 
 ## WolfensteinCGA compatibility and hardware validation
 
@@ -35,3 +35,18 @@ LCD modes remain separate possible future display targets, not
 implemented DOOM features. An emulated 8086 smoke test verifies that the
 game terminates but **does not prove smooth gameplay at 7 MHz**.
 Use `BENCH.BAT` on the physical Tandy EX to compare renderer speeds.
+
+## Fullscreen Tandy 16-color mode
+
+The Tandy EX's 16-color BIOS mode 08h has an 80-byte video row.
+Previous builds centered the engine's 60-byte rows with unused borders.
+The native Tandy builds now expand the 120 x 160 logical framebuffer to
+160 x 200 at the video-copy stage. The pixels are nearest-neighbor
+stretched (not newly rendered), so the fast build keeps the 30-column
+projection for 7 MHz systems; the high-detail build uses 60.
+All menus, status bar, title screens, and gameplay share the same scaling.
+The Tandy 16 RGBI palette registers are initialized to the identity
+mapping, avoiding accidental use of the CGA palette call. This does not
+create more than 16 physical colors; existing converted EGA art may
+still be dithered. We are not yet claiming a hardware-measured FPS for
+this enlarged output.
