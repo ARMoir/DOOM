@@ -40,6 +40,8 @@
 
 
 #define PLANEWIDTH        80
+#define PACKED_STRIDE      60
+#define BYTES_PER_COLUMN   (PACKED_STRIDE / VIEWWINDOWWIDTH)
 #define SCREENHEIGHT_CGA 200
 
 
@@ -234,10 +236,10 @@ void I_InitGraphicsHardwareSpecificCode(void)
 	I_SetScreenMode(4);
 #endif
 
-	videomemory = D_MK_FP(0xb800, (((SCREENHEIGHT_CGA - SCREENHEIGHT) / 2) / 2) * PLANEWIDTH + (PLANEWIDTH - VIEWWINDOWWIDTH) / 2 + __djgpp_conventional_base);
+	videomemory = D_MK_FP(0xb800, (((SCREENHEIGHT_CGA - SCREENHEIGHT) / 2) / 2) * PLANEWIDTH + (PLANEWIDTH - PACKED_STRIDE) / 2 + __djgpp_conventional_base);
 
-	_s_screen = Z_MallocStatic(VIEWWINDOWWIDTH * SCREENHEIGHT);
-	_fmemset(_s_screen, 0, VIEWWINDOWWIDTH * SCREENHEIGHT);
+	_s_screen = Z_MallocStatic(PACKED_STRIDE * SCREENHEIGHT);
+	_fmemset(_s_screen, 0, PACKED_STRIDE * SCREENHEIGHT);
 }
 
 
@@ -249,36 +251,52 @@ void I_ShutdownGraphics(void)
 
 static boolean drawStatusBar = true;
 
+#if defined __WATCOMC__ && defined _M_I86
+// One far setup for the whole blit. Each bank has 80 bytes per scanline
+// and the centered view occupies 60. SI walks the packed buffer in order.
+static void XT_CopyRows(const uint8_t __far* src, uint8_t __far* dst, uint16_t pairs);
+#pragma aux XT_CopyRows = \
+	"push ds" "push es" "mov ds,dx" "mov es,ax" "cld" \
+	"copy_pair:" "mov cx,30" "rep movsw" "add di,8132" \
+	"mov cx,30" "rep movsw" "sub di,8172" "dec bx" "jnz copy_pair" \
+	"pop es" "pop ds" \
+	parm [dx si] [ax di] [bx] modify [bx cx si di];
+#endif
 
 static void I_DrawBuffer(uint8_t __far* buffer)
 {
+#if defined __WATCOMC__ && defined _M_I86
+	uint16_t height = drawStatusBar ? SCREENHEIGHT : SCREENHEIGHT - ST_HEIGHT;
+	XT_CopyRows(buffer, videomemory, height / 2);
+#else
 	uint8_t __far* src = buffer;
 	uint8_t __far* dst = videomemory;
 
 	for (int16_t y = 0; y < (SCREENHEIGHT - ST_HEIGHT) / 2; y++)
 	{
-		_fmemcpy(dst, src, VIEWWINDOWWIDTH);
+		_fmemcpy(dst, src, PACKED_STRIDE);
 		dst += 0x2000;
-		src += VIEWWINDOWWIDTH;
+		src += PACKED_STRIDE;
 
-		_fmemcpy(dst, src, VIEWWINDOWWIDTH);
+		_fmemcpy(dst, src, PACKED_STRIDE);
 		dst -= 0x2000 - PLANEWIDTH;
-		src += VIEWWINDOWWIDTH;
+		src += PACKED_STRIDE;
 	}
 
 	if (drawStatusBar)
 	{
 		for (int16_t y = 0; y < ST_HEIGHT / 2; y++)
 		{
-			_fmemcpy(dst, src, VIEWWINDOWWIDTH);
+			_fmemcpy(dst, src, PACKED_STRIDE);
 			dst += 0x2000;
-			src += VIEWWINDOWWIDTH;
+			src += PACKED_STRIDE;
 
-			_fmemcpy(dst, src, VIEWWINDOWWIDTH);
+			_fmemcpy(dst, src, PACKED_STRIDE);
 			dst -= 0x2000 - PLANEWIDTH;
-			src += VIEWWINDOWWIDTH;
+			src += PACKED_STRIDE;
 		}
 	}
+#endif
 	drawStatusBar = true;
 }
 
@@ -315,49 +333,82 @@ const uint8_t __far* source;
 uint8_t __far* dest;
 
 
-#if defined C_ONLY
+#if BYTES_PER_COLUMN == 2 && defined __WATCOMC__ && defined _M_I86
+// The DOS medium model uses DGROUP for SS and near data. Keep DS on the
+// texture, use the stack segment for the lighting table, and ES on the
+// packed framebuffer. Each texture sample covers two bytes on two rows.
+static void R_DrawColumn2(uint16_t fracstep, uint16_t frac, int16_t count);
+#pragma aux R_DrawColumn2 = \
+	"push ds" "push es" "push bp" "push cx" "shl si,1" \
+	"mov bp,colormap" "les di,dest" "lds bx,source" \
+	"shr cx,1" "jcxz odd_tail" \
+	"texture_pair:" \
+	"mov al,dh" "shr al,1" "xlat" "xchg bx,bp" "xlat ss:[bx]" "xchg bx,bp" \
+	"mov ah,al" "mov es:[di],ax" "mov es:60[di],ax" \
+	"add di,120" "add dx,si" "loop texture_pair" \
+	"odd_tail:" "pop cx" "test cl,1" "jz finished" \
+	"mov al,dh" "shr al,1" "xlat" "mov bx,bp" "xlat ss:[bx]" \
+	"mov ah,al" "mov es:[di],ax" \
+	"finished:" "pop bp" "pop es" "pop ds" \
+	parm [si] [dx] [cx] modify [ax bx cx dx si di];
+#elif BYTES_PER_COLUMN == 2
+static void R_DrawColumn2(uint16_t fracstep, uint16_t frac, int16_t count)
+{
+	uint16_t __far* out = (uint16_t __far*)dest;
+	while (count > 0)
+	{
+		uint16_t color = colormap[source[frac >> COLBITS]] * 0x101u;
+		*out = color;
+		if (count > 1)
+			out[PACKED_STRIDE / 2] = color;
+		out += PACKED_STRIDE;
+		frac += fracstep * 2;
+		count -= 2;
+	}
+}
+#elif defined C_ONLY
 static void R_DrawColumn2(uint16_t fracstep, uint16_t frac, int16_t count)
 {
 	int16_t l = count >> 4;
 	while (l--)
 	{
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
 
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
 
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
 
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		*dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		*dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
 	}
 
 	switch (count & 15)
 	{
-		case 15: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case 14: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case 13: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case 12: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case 11: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case 10: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  9: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  8: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  7: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  6: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  5: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  4: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  3: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
-		case  2: *dest = colormap[source[frac >> COLBITS]]; dest += VIEWWINDOWWIDTH; frac += fracstep;
+		case 15: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case 14: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case 13: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case 12: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case 11: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case 10: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  9: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  8: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  7: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  6: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  5: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  4: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  3: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
+		case  2: *dest = colormap[source[frac >> COLBITS]]; dest += PACKED_STRIDE; frac += fracstep;
 		case  1: *dest = colormap[source[frac >> COLBITS]];
 	}
 }
@@ -378,7 +429,7 @@ void R_DrawColumnSprite(const draw_column_vars_t *dcvars)
 
 	colormap = dcvars->colormap;
 
-	dest = _s_screen + (dcvars->yl * VIEWWINDOWWIDTH) + dcvars->x;
+	dest = _s_screen + (dcvars->yl * PACKED_STRIDE) + dcvars->x * BYTES_PER_COLUMN;
 
 	const uint16_t fracstep = dcvars->fracstep;
 	uint16_t frac = (dcvars->texturemid >> COLEXTRABITS) + (dcvars->yl - CENTERY) * fracstep;
@@ -403,6 +454,14 @@ static uint8_t swapNibbles(uint8_t color)
 	return (color << 4) | (color >> 4);
 }
 
+static inline void PutWorldByte(uint8_t __far* out, uint8_t color)
+{
+#if BYTES_PER_COLUMN == 2
+	*(uint16_t __far*)out = (uint16_t)color * 0x101u;
+#else
+	*out = color;
+#endif
+}
 
 static void R_DrawColumnFlat2(uint8_t color, int16_t yl, int16_t count)
 {
@@ -422,12 +481,12 @@ static void R_DrawColumnFlat2(uint8_t color, int16_t yl, int16_t count)
 
 	for (int16_t i = 0; i < count / 2; i++)
 	{
-		*dest = color0; dest += VIEWWINDOWWIDTH;
-		*dest = color1; dest += VIEWWINDOWWIDTH;
+		PutWorldByte(dest, color0); dest += PACKED_STRIDE;
+		PutWorldByte(dest, color1); dest += PACKED_STRIDE;
 	}
 
 	if (count & 1)
-		*dest = color0;
+		PutWorldByte(dest, color0);
 }
 #else
 void R_DrawColumnFlat2(uint8_t color, int16_t yl, int16_t count);
@@ -442,7 +501,7 @@ void R_DrawColumnFlat(uint8_t color, const draw_column_vars_t *dcvars)
 	if (count <= 0)
 		return;
 
-	dest = _s_screen + (dcvars->yl * VIEWWINDOWWIDTH) + dcvars->x;
+	dest = _s_screen + (dcvars->yl * PACKED_STRIDE) + dcvars->x * BYTES_PER_COLUMN;
 
 	R_DrawColumnFlat2(color, dcvars->yl, count);
 }
@@ -474,14 +533,14 @@ void R_DrawFuzzColumn(const draw_column_vars_t *dcvars)
 	if (count <= 0)
 		return;
 
-	uint8_t __far* dest = _s_screen + (dcvars->yl * VIEWWINDOWWIDTH) + dcvars->x;
+	uint8_t __far* dest = _s_screen + (dcvars->yl * PACKED_STRIDE) + dcvars->x * BYTES_PER_COLUMN;
 
 	static int16_t fuzzpos = 0;
 
 	do
 	{
-		*dest = fuzzcolors[fuzzpos];
-		dest += VIEWWINDOWWIDTH;
+		PutWorldByte(dest, fuzzcolors[fuzzpos]);
+		dest += PACKED_STRIDE;
 
 		fuzzpos++;
 		if (fuzzpos >= FUZZTABLE)
@@ -492,7 +551,7 @@ void R_DrawFuzzColumn(const draw_column_vars_t *dcvars)
 
 void V_ClearViewWindow(void)
 {
-	_fmemset(_s_screen, 0, VIEWWINDOWWIDTH * (SCREENHEIGHT - ST_HEIGHT));
+	_fmemset(_s_screen, 0, PACKED_STRIDE * (SCREENHEIGHT - ST_HEIGHT));
 }
 
 
@@ -534,8 +593,8 @@ void V_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color)
 
 	while (true)
 	{
-		uint8_t c = _s_screen[y0 * VIEWWINDOWWIDTH + (x0 >> 2)];
-		_s_screen[y0 * VIEWWINDOWWIDTH + (x0 >> 2)] = (c & bitmask) | PIXEL_BITS(color, p);
+		uint8_t c = _s_screen[y0 * PACKED_STRIDE + (x0 >> 2)];
+		_s_screen[y0 * PACKED_STRIDE + (x0 >> 2)] = (c & bitmask) | PIXEL_BITS(color, p);
 
 		if (x0 == x1 && y0 == y1)
 			break;
@@ -566,15 +625,15 @@ void V_DrawBackground(int16_t backgroundnum)
 
 	for (int16_t y = 0; y < SCREENHEIGHT; y++)
 	{
-		for (int16_t x = 0; x < VIEWWINDOWWIDTH; x += 16)
+		for (int16_t x = 0; x < PACKED_STRIDE; x += 16)
 		{
-			uint8_t __far* d = &_s_screen[y * VIEWWINDOWWIDTH + x];
+			uint8_t __far* d = &_s_screen[y * PACKED_STRIDE + x];
 			const byte __far* s = &src[((y & 63) * 16)];
 
 			size_t len = 16;
 
-			if (VIEWWINDOWWIDTH - x < 16)
-				len = VIEWWINDOWWIDTH - x;
+			if (PACKED_STRIDE - x < 16)
+				len = PACKED_STRIDE - x;
 
 			_fmemcpy(d, s, len);
 		}
@@ -588,7 +647,7 @@ void V_DrawRaw(int16_t num, uint16_t offset)
 {
 	const uint8_t __far* lump = W_TryGetLumpByNum(num);
 
-	offset = (offset / SCREENWIDTH) * VIEWWINDOWWIDTH;
+	offset = (offset / SCREENWIDTH) * PACKED_STRIDE;
 
 	if (lump != NULL)
 	{
@@ -615,7 +674,7 @@ void V_DrawPatchNotScaled(int16_t x, int16_t y, const patch_t __far* patch)
 	y -= patch->topoffset;
 	x -= patch->leftoffset;
 
-	byte __far* desttop = _s_screen + (y * VIEWWINDOWWIDTH) + (x >> 2);
+	byte __far* desttop = _s_screen + (y * PACKED_STRIDE) + (x >> 2);
 
 	int16_t width = patch->width;
 
@@ -630,7 +689,7 @@ void V_DrawPatchNotScaled(int16_t x, int16_t y, const patch_t __far* patch)
 		while (column->topdelta != 0xff)
 		{
 			const byte __far* source = (const byte __far*)column + 3;
-			byte __far* dest = desttop + (column->topdelta * VIEWWINDOWWIDTH);
+			byte __far* dest = desttop + (column->topdelta * PACKED_STRIDE);
 
 			uint16_t count = column->length;
 
@@ -639,42 +698,42 @@ void V_DrawPatchNotScaled(int16_t x, int16_t y, const patch_t __far* patch)
 
 			if (count == 7)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
 				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 3)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
 				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 5)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
 				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else if (count == 6)
 			{
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
-				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
+				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
 				c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p);
 			}
 			else
 			{
 				while (count--)
 				{
-					c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += VIEWWINDOWWIDTH;
+					c = *dest; color = *source++; *dest = (c & bitmask) | PIXEL_BITS(color, p); dest += PACKED_STRIDE;
 				}
 			}
 
@@ -730,7 +789,7 @@ void V_DrawPatchScaled(int16_t x, int16_t y, const patch_t __far* patch)
 
 			int16_t dc_yh = (((y + column->topdelta + column->length) * DY) >> FRACBITS);
 
-			byte __far* dest = _s_screen + (dc_yl * VIEWWINDOWWIDTH) + (dc_x >> 2);
+			byte __far* dest = _s_screen + (dc_yl * PACKED_STRIDE) + (dc_x >> 2);
 
 			int16_t frac = 0;
 
@@ -742,7 +801,7 @@ void V_DrawPatchScaled(int16_t x, int16_t y, const patch_t __far* patch)
 				uint8_t c = *dest;
 				uint8_t color = source[frac >> 8];
 				*dest = (c & bitmask) | PIXEL_BITS(color, p);
-				dest += VIEWWINDOWWIDTH;
+				dest += PACKED_STRIDE;
 				frac += DYI;
 			}
 
@@ -758,9 +817,9 @@ static int16_t __far* wipe_y_lookup;
 
 void wipe_StartScreen(void)
 {
-	frontbuffer = Z_TryMallocStatic(VIEWWINDOWWIDTH * SCREENHEIGHT);
+	frontbuffer = Z_TryMallocStatic(PACKED_STRIDE * SCREENHEIGHT);
 	if (frontbuffer)
-		_fmemcpy(frontbuffer, _s_screen, VIEWWINDOWWIDTH * SCREENHEIGHT);
+		_fmemcpy(frontbuffer, _s_screen, PACKED_STRIDE * SCREENHEIGHT);
 }
 
 
@@ -772,7 +831,7 @@ static boolean wipe_ScreenWipe(int16_t ticks)
 
 	while (ticks--)
 	{
-		for (int16_t i = 0; i < VIEWWINDOWWIDTH; i++)
+		for (int16_t i = 0; i < PACKED_STRIDE; i++)
 		{
 			if (wipe_y_lookup[i] < 0)
 			{
@@ -789,9 +848,9 @@ static boolean wipe_ScreenWipe(int16_t ticks)
 				if (wipe_y_lookup[i] + dy >= SCREENHEIGHT)
 					dy = SCREENHEIGHT - wipe_y_lookup[i];
 
-				uint8_t __far* s = &frontbuffer[i] + ((SCREENHEIGHT - dy - 1) * VIEWWINDOWWIDTH);
+				uint8_t __far* s = &frontbuffer[i] + ((SCREENHEIGHT - dy - 1) * PACKED_STRIDE);
 
-				uint8_t __far* d = &frontbuffer[i] + ((SCREENHEIGHT - 1) * VIEWWINDOWWIDTH);
+				uint8_t __far* d = &frontbuffer[i] + ((SCREENHEIGHT - 1) * PACKED_STRIDE);
 
 				// scroll down the column. Of course we need to copy from the bottom... up to
 				// SCREENHEIGHT - yLookup - dy
@@ -799,19 +858,19 @@ static boolean wipe_ScreenWipe(int16_t ticks)
 				for (int16_t j = SCREENHEIGHT - wipe_y_lookup[i] - dy; j; j--)
 				{
 					*d = *s;
-					d += -VIEWWINDOWWIDTH;
-					s += -VIEWWINDOWWIDTH;
+					d += -PACKED_STRIDE;
+					s += -PACKED_STRIDE;
 				}
 
 				// copy new screen. We need to copy only between y_lookup and + dy y_lookup
-				s = &backbuffer[i]  + wipe_y_lookup[i] * VIEWWINDOWWIDTH;
-				d = &frontbuffer[i] + wipe_y_lookup[i] * VIEWWINDOWWIDTH;
+				s = &backbuffer[i]  + wipe_y_lookup[i] * PACKED_STRIDE;
+				d = &frontbuffer[i] + wipe_y_lookup[i] * PACKED_STRIDE;
 
 				for (int16_t j = 0 ; j < dy; j++)
 				{
 					*d = *s;
-					d += VIEWWINDOWWIDTH;
-					s += VIEWWINDOWWIDTH;
+					d += PACKED_STRIDE;
+					s += PACKED_STRIDE;
 				}
 
 				wipe_y_lookup[i] += dy;
@@ -828,10 +887,10 @@ static boolean wipe_ScreenWipe(int16_t ticks)
 
 static void wipe_initMelt()
 {
-	wipe_y_lookup = Z_MallocStatic(VIEWWINDOWWIDTH * sizeof(int16_t));
+	wipe_y_lookup = Z_MallocStatic(PACKED_STRIDE * sizeof(int16_t));
 
 	wipe_y_lookup[0] = -(M_Random() % 16);
-	for (int16_t i = 1; i < VIEWWINDOWWIDTH; i++)
+	for (int16_t i = 1; i < PACKED_STRIDE; i++)
 	{
 		int16_t r = (M_Random() % 3) - 1;
 

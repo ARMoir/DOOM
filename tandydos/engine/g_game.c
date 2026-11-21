@@ -89,6 +89,7 @@ int16_t             _g_gamemap;
 player_t        _g_player;
 
 static int32_t             starttime;     // for comparative timing purposes
+static boolean quickbench;
 
 int32_t             _g_gametic;
 int32_t             _g_basetic;       /* killough 9/29/98: for demo sync */
@@ -931,6 +932,8 @@ static void G_ReadDemoTiccmd (void)
 {
     uint8_t at; // e6y: tasdoom stuff
 
+    if (quickbench && _g_gametic - _g_basetic >= 96)
+        I_EndTimedemo(96, I_GetTime() - starttime);
     if (*demo_p == DEMOMARKER)
         G_CheckDemoStatus();      // end of demo data stream
     else if (_g_demoplayback && demo_p + 4 > demobuffer + demolength)
@@ -1074,6 +1077,7 @@ static void G_DoPlayDemo(void)
 
     _g_demoplayback = true;
 
+    quickbench = _g_timingdemo && M_CheckParm("-quick");
     starttime = I_GetTime();
 }
 

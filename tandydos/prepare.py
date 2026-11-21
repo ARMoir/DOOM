@@ -81,6 +81,10 @@ def prepare(output, binaries, archives, modes):
                 wad_name, wad = "DOOMT16.WAD", pack_tandy(wad)
             (stage / wad_name).write_bytes(wad)
             shutil.copyfile(binaries / exe_name, stage / exe_name)
+            if mode == "tandy":
+                shutil.copyfile(binaries / "DOOMTGH.EXE", stage / "DOOMTGH.EXE")
+                bat = (PORT / "BENCH.BAT").read_text(encoding="ascii")
+                (stage / "BENCH.BAT").write_bytes(bat.replace("\n", "\r\n").encode("ascii"))
         shutil.copyfile(PORT / "RUN.TXT", stage / "RUN.TXT")
         shutil.copyfile(PORT / "engine" / "LICENSE", stage / "COPYING.TXT")
         for item in stage.iterdir():
