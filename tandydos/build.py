@@ -43,7 +43,7 @@ def build_launcher(watcom, output):
                   "libpath '" + str(watcom / "lib286") + "'",
                   "libpath '" + str(watcom / "lib286" / "dos") + "'",
                   "library noemu87", "file selector.obj"]
-        Path(scratch, "link.lnk").write_text("\\n".join(script) + "\\n",
+        Path(scratch, "link.lnk").write_text("\n".join(script) + "\n",
                                               encoding="ascii")
         subprocess.run([linker, "@link.lnk"], cwd=scratch, env=env, check=True)
         shutil.copyfile(Path(scratch, "DOOM.EXE"), output / "DOOM.EXE")
