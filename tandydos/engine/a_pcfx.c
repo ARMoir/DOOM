@@ -176,3 +176,9 @@ void PCFX_Shutdown(void)
 		PCFX_Installed = false;
 	}
 }
+
+/* Public stop used when a Doom channel expires or is replaced. */
+void PCFX_StopSound(void)
+{
+	PCFX_Stop();
+}

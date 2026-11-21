@@ -97,7 +97,7 @@ int16_t snd_MusicVolume = 15;
 
 
 // number of channels available
-static const int16_t numChannels = 1;
+static int16_t numChannels = 1;
 
 //
 // Internals.
@@ -118,6 +118,8 @@ static int16_t S_getChannel(void __far* origin, const sfxinfo_t *sfxinfo, boolea
 
 void S_Init(int16_t sfxVolume, int16_t musicVolume)
 {
+    /* PC speaker: one voice; Tandy PSG: three prioritised tone slots. */
+    numChannels = I_SoundChannels();
     //jff 1/22/98 skip sound init if sound not enabled
     if (!nosfxparm)
     {
@@ -292,7 +294,7 @@ static boolean S_SoundIsPlaying(int16_t cnum)
     {
         int32_t ticknow = _g_gametic;
 
-        return (channel->tickend < ticknow);
+        return (ticknow <= channel->tickend);
     }
 
     return false;
@@ -316,7 +318,7 @@ void S_UpdateSounds(void)
 
 		if ((sfx = c->sfxinfo))
 		{
-			if (!S_SoundIsPlaying(c->handle))
+			if (!S_SoundIsPlaying(cnum))
 			{
 				// if channel is allocated but sound has stopped, free it
 				S_StopChannel(cnum);
@@ -415,6 +417,7 @@ static void S_StopChannel(int16_t cnum)
 
     if (c->sfxinfo)
     {
+        I_StopSound(cnum);
         // check to see
         //  if other channels are playing the sound
         for (i=0 ; i<numChannels ; i++)

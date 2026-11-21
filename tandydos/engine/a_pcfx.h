@@ -33,6 +33,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define __PCFX_H
 
 void	PCFX_Play(int16_t lumpnum);
+void	PCFX_StopSound(void);
 void	PCFX_Init(void);
 void	PCFX_Shutdown(void);
 

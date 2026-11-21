@@ -60,83 +60,116 @@
 #include "m_fixed.h"
 
 #include "a_pcfx.h"
+#include "a_tandyfx.h"
+#include <dos.h>
 
 #include "globdata.h"
 
 
-#define MAX_CHANNELS    1
+/* Sound hardware is detected independently of graphics: VGA in a
+ * Tandy 1000 still has the native PSG at port 0xC0.
+ */
+#define SOUND_PC 0
+#define SOUND_TANDY 1
 
-
+static int16_t sound_device = SOUND_PC;
 static int16_t firstsfx;
+extern int myargc;
+extern char **myargv;
 
+static int16_t I_HasTandyPSG(void)
+{
+    const uint8_t __far *model =
+        (const uint8_t __far *)MK_FP(0xffff, 0x000e);
+    const uint8_t __far *signature =
+        (const uint8_t __far *)MK_FP(0xfc00, 0x0000);
+    return *model == 0xff && *signature == 0x21;
+}
+
+int16_t I_SoundChannels(void)
+{
+    return sound_device == SOUND_TANDY ? 3 : 1;
+}
 
 int16_t I_StartSound(sfxenum_t id, int16_t channel, int16_t vol, int16_t sep)
 {
-	UNUSED(vol);
-	UNUSED(sep);
-
-	if (!(0 <= channel && channel < MAX_CHANNELS))
-		return -1;
-
-//	// hacks out certain PC sounds
-//	if (id == sfx_posact
-//	 || id == sfx_bgact
-//	 || id == sfx_dmact
-//	 || id == sfx_dmpain
-//	 || id == sfx_popain
-//	 || id == sfx_sawidl)
-//		return -1;
-
-	int16_t lumpnum = firstsfx + id;
-	PCFX_Play(lumpnum);
-
-	return channel;
+    int16_t lumpnum;
+    UNUSED(sep);
+    if (nosfxparm) return -1;
+    lumpnum = firstsfx + id;
+    if (sound_device == SOUND_TANDY)
+        return TFX_Start(lumpnum, channel, vol, id);
+    if (channel != 0) return -1;
+    PCFX_Play(lumpnum);
+    return channel;
 }
 
+void I_StopSound(int16_t channel)
+{
+    if (sound_device == SOUND_TANDY) TFX_Stop(channel);
+    else if (channel == 0) PCFX_StopSound();
+}
 
 void I_InitSound(void)
 {
-	if (M_CheckParm("-nosound") || M_CheckParm("-nosfx"))
-		nosfxparm = true;
+    int16_t i = M_CheckParm("-sound");
+    sound_device = I_HasTandyPSG() ? SOUND_TANDY : SOUND_PC;
 
-	if (nomusicparm && nosfxparm)
-		return;
+    if (i && i + 1 < myargc) {
+        if (stricmp(myargv[i + 1], "pc") == 0) sound_device = SOUND_PC;
+        else if (stricmp(myargv[i + 1], "tandy") == 0)
+            sound_device = SOUND_TANDY;
+        else if (stricmp(myargv[i + 1], "auto") != 0) {
+            printf("Unknown -sound mode. Use auto, tandy or pc.\n");
+            sound_device = SOUND_PC;
+        }
+    }
+    nomusicparm = (sound_device != SOUND_TANDY ||
+                   M_CheckParm("-nomusic") ||
+                   M_CheckParm("-nosound"));
+    if (M_CheckParm("-nosound")) nosfxparm = true;
+    if (M_CheckParm("-nosfx")) nosfxparm = true;
+    if (nomusicparm && nosfxparm) {
+        printf("I_InitSound: sound disabled\n");
+        return;
+    }
 
-	PCFX_Init();
-
-	// Finished initialization.
-	printf("I_InitSound: sound ready\n");
+    if (sound_device == SOUND_TANDY) {
+        TFX_Init();
+        printf("I_InitSound: Tandy PSG 3 tones + noise%s\n",
+               nomusicparm ? " (effects only)" : " (original ambient music)");
+    } else {
+        PCFX_Init();
+        printf("I_InitSound: PC speaker (one voice)\n");
+    }
 }
-
 
 void I_InitSound2(void)
 {
-	firstsfx = W_GetNumForName("DPPISTOL") - 1;
+    firstsfx = W_GetNumForName("DPPISTOL") - 1;
 }
-
 
 void I_ShutdownSound(void)
 {
-	if (nosfxparm)
-		return;
-
-	PCFX_Shutdown();
+    if (nomusicparm && nosfxparm) return;
+    if (sound_device == SOUND_TANDY) TFX_Shutdown();
+    else PCFX_Shutdown();
 }
-
 
 void I_PlaySong(musicenum_t handle, boolean looping)
 {
-	UNUSED(handle);
-	UNUSED(looping);
+    if (!nomusicparm && sound_device == SOUND_TANDY)
+        TFX_MusicPlay(handle, looping);
 }
 
 
 void I_StopSong(musicenum_t handle)
 {
-	UNUSED(handle);
+    UNUSED(handle);
+    if (sound_device == SOUND_TANDY) TFX_MusicStop();
 }
 
 void I_SetMusicVolume(int16_t volume)
 {
-	UNUSED(volume);
+    if (sound_device == SOUND_TANDY) TFX_MusicVolume(volume);
 }

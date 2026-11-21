@@ -52,6 +52,8 @@ void I_ShutdownSound(void);
 
 // Starts a sound in a particular sound channel.
 int16_t I_StartSound(sfxenum_t id, int16_t channel, int16_t vol, int16_t sep);
+void I_StopSound(int16_t channel);
+int16_t I_SoundChannels(void);
 
 
 //
