@@ -42,8 +42,8 @@
 #define PLANEWIDTH        80
 #define PACKED_STRIDE      60
 #define BYTES_PER_COLUMN   (PACKED_STRIDE / VIEWWINDOWWIDTH)
-// The experimental asm paths must be checked against a working 8086 timedemo
-// before enabling. The C fallback keeps the 30-column packed renderer.
+// The 8086 banked video blit is enabled. The experimental texture scaler
+// remains gated until it passes the 8086 timedemo.
 #define SCREENHEIGHT_CGA 200
 
 
@@ -253,7 +253,7 @@ void I_ShutdownGraphics(void)
 
 static boolean drawStatusBar = true;
 
-#if defined __WATCOMC__ && defined _M_I86 && defined XT_EXPERIMENTAL_ASM
+#if defined __WATCOMC__ && defined _M_I86
 // One far setup for the whole blit. Each bank has 80 bytes per scanline
 // and the centered view occupies 60. SI walks the packed buffer in order.
 static void XT_CopyRows(const uint8_t __far* src, uint8_t __far* dst, uint16_t pairs);
@@ -267,7 +267,7 @@ static void XT_CopyRows(const uint8_t __far* src, uint8_t __far* dst, uint16_t p
 
 static void I_DrawBuffer(uint8_t __far* buffer)
 {
-#if defined __WATCOMC__ && defined _M_I86 && defined XT_EXPERIMENTAL_ASM
+#if defined __WATCOMC__ && defined _M_I86
 	uint16_t height = drawStatusBar ? SCREENHEIGHT : SCREENHEIGHT - ST_HEIGHT;
 	XT_CopyRows(buffer, videomemory, height / 2);
 #else
