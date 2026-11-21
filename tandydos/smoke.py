@@ -45,8 +45,15 @@ if not errorlevel 1 echo OK>D:\\PASS.TXT
 exit
 """, encoding="ascii")
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-        subprocess.run([str(emulator), "-fastlaunch", "-nomenu", "-conf", str(config)],
-                       cwd=temp, env=env, check=True, timeout=90)
+        try:
+            subprocess.run([str(emulator), "-fastlaunch", "-nomenu", "-conf", str(config)],
+                           cwd=temp, env=env, check=True, timeout=90)
+        except subprocess.TimeoutExpired as error:
+            output = temp / "DEMO.LOG"
+            if output.exists():
+                print(f"{program} partial DOS log:\n" +
+                      output.read_text(encoding="cp437", errors="replace"), flush=True)
+            raise RuntimeError(f"{program} timed out during DOS timedemo") from error
         log = (temp / "DEMO.LOG").read_text(encoding="cp437", errors="replace")
         print(f"{program}, DOSBox-X fixed {cycles}\n{log}", flush=True)
         match = re.search(r"Timed (\d+) gametics in (\d+) realtics = [\d.]+ frames per second", log)
