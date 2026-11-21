@@ -7,11 +7,19 @@ import re
 import subprocess
 import tempfile
 
-TESTS = (("DOOMTGA", "tandy"), ("DOOMTGH", "tandy"),
-         ("DOOMCGA", "cga"), ("DOOMVGA", "vgaonly"))
+# Exercise the one user-facing EXE in auto and explicit modes.
+TESTS = (
+    ("tandy", "-auto", "Tandy 16-color (fast) (auto)"),
+    ("vgaonly", "-auto", "VGA 256-color (auto)"),
+    ("cga", "-auto", "CGA 4-color (auto)"),
+    ("tandy", "-tandy", "Tandy 16-color (fast) (forced)"),
+    ("tandy", "-tandyhi", "Tandy 16-color (detail) (forced)"),
+    ("cga", "-cga", "CGA 4-color (forced)"),
+    ("vgaonly", "-vga", "VGA 256-color (forced)"),
+)
 
 
-def run_demo(emulator, game, program, machine, quick=True):
+def run_demo(emulator, game, machine, switch, selected, quick=True):
     # Keep CI bounded. Real 7 MHz timings must be tested on actual hardware.
     cycles = 50000
     options = "-quick" if quick else ""
@@ -40,7 +48,7 @@ nosound=true
 mount c "{game}"
 mount d "{temp}"
 c:
-{program} -timedemo demo3 {options} -noems -noxms > D:\\DEMO.LOG
+DOOM {switch} -timedemo demo3 {options} -noems -noxms > D:\\DEMO.LOG
 if not errorlevel 1 echo OK>D:\\PASS.TXT
 exit
 """, encoding="ascii")
@@ -51,15 +59,17 @@ exit
         except subprocess.TimeoutExpired as error:
             output = temp / "DEMO.LOG"
             if output.exists():
-                print(f"{program} partial DOS log:\n" +
+                print(f"{switch} partial DOS log:\n" +
                       output.read_text(encoding="cp437", errors="replace"), flush=True)
-            raise RuntimeError(f"{program} timed out during DOS timedemo") from error
+            raise RuntimeError(f"{switch} timed out during DOS timedemo") from error
         log = (temp / "DEMO.LOG").read_text(encoding="cp437", errors="replace")
-        print(f"{program}, DOSBox-X fixed {cycles}\n{log}", flush=True)
+        print(f"{switch}, DOSBox-X fixed {cycles}\n{log}", flush=True)
         match = re.search(r"Timed (\d+) gametics in (\d+) realtics = [\d.]+ frames per second", log)
         expected = 96 if quick else 2134
-        if not (temp / "PASS.TXT").exists() or not match or int(match[1]) != expected or int(match[2]) < 1:
-            raise RuntimeError(program + " did not finish the recorded game in DOS")
+        if (not (temp / "PASS.TXT").exists() or not match or
+                int(match[1]) != expected or int(match[2]) < 1 or
+                "Video: " + selected not in log):
+            raise RuntimeError(switch + " did not finish the recorded game in DOS")
         return int(match[1])
 
 
@@ -70,8 +80,8 @@ if __name__ == "__main__":
     parser.add_argument("--full", action="store_true",
                         help="Run the entire 2134-tic demo instead of the 96-tic smoke test")
     args = parser.parse_args()
-    counts = [run_demo(args.emulator.resolve(), args.game.resolve(), program, machine,
-                       quick=not args.full)
-              for program, machine in TESTS]
+    counts = [run_demo(args.emulator.resolve(), args.game.resolve(),
+                       machine, switch, selected, quick=not args.full)
+              for machine, switch, selected in TESTS]
     if len(set(counts)) != 1:
         raise SystemExit(f"Gameplay tic count differed by adapter: {counts}")

@@ -61,7 +61,7 @@ jobs:
       - name: Prepare the shareware episode and the CompactFlash directory
         run: python tandydos/prepare.py --bin build/exe --out build/DOOMDOS
 
-      - name: Smoke-test 96 demo tics on all four real-mode DOS builds
+      - name: Smoke-test DOOM.EXE auto video detection and manual overrides
         run: python tandydos/smoke.py --emulator .dos-tools/dosbox/mingw-build/mingw-sdl2/dosbox-x.exe --game build/DOOMDOS
 
       - name: Publish playable DOS build
@@ -91,7 +91,8 @@ jobs:
           files: build/DOOM-DOS.zip
           body: |
             Real-mode DOS build from commit ${{ github.sha }}.
-            Includes Tandy 160x200 (fast and high detail), CGA, VGA,
+            Includes one DOOM.EXE selector with automatic and forced video modes,
+            Tandy 160x200 (fast and high detail), CGA, VGA,
             and matching shareware Episode 1 data. Built and smoke-tested
             in DOSBox-X using the 8086 CPU mode. Real Tandy 7 MHz
             playability and frame rates still require hardware verification.

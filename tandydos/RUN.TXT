@@ -1,32 +1,41 @@
-DOOM FOR TANDY 1000 AND DOS
+DOOM FOR TANDY 1000, CGA AND VGA - DOS AUTOMATIC VIDEO
 
-Copy the game files into one directory on your DOS disk. Change to it
-before starting the game. Use an expanded Tandy 1000 EX or a DOS PC
-with 640 KB installed. Close memory-resident programs to free RAM.
+Run DOOM at the DOS prompt. It detects VGA, then native
+Tandy graphics, otherwise chooses the 4-color CGA driver.
 
-  DOOMTGA   Tandy mode 08h fullscreen 160 x 200, 16 RGBI colors
-  DOOMTGH   Same fullscreen mode with higher-detail 3D renderer
-  DOOMCGA   CGA or Tandy, 320 x 200, 4 colors (F5 changes palette)
-  DOOMVGA   VGA adapter, mode 13h, 256 colors
+COMMAND LINE:
+  DOOM                  Automatically choose video
+  DOOM -detect          Show what the machine reports
+  DOOM -tandy           Tandy 160x200 full screen, 16 RGBI colors
+  DOOM -tandyhi         Tandy 16-color higher-detail 3D
+  DOOM -cga             CGA 4-color mode
+  DOOM -vga             VGA 256-color mode 13h
+  DOOM -video tandy     Alternative override form
+  DOOM -video auto      Reset video to automatic
+  DOOM -help            List available options
 
-Arrows move and turn. Ctrl fires. Space or Enter opens doors. Alt strafes.
-Shift runs. Tab shows the automap. Brackets switch weapons. Esc opens
-the menu. F10 exits to DOS.
+On the Tandy 1000 EX run DOOM or DOOM -tandy. If
+DOOM -detect incorrectly reports CGA, force -tandy.
 
-To compare both renderers on your EX, run BENCH. It times the same
-96 game tics and saves FAST.LOG and FULL.LOG. For the full demo run:
-  DOOMTGA -timedemo demo3
+Keep DOOM.EXE, the four .OVL renderer files, and their
+corresponding WADs TOGETHER in the same DOS directory:
+  DOOMTGA.OVL / DOOMTGH.OVL --> DOOMT16.WAD
+  DOOMCGA.OVL                --> DOOM4.WAD
+  DOOMVGA.OVL                --> DOOM1.WAD
 
-The result at the DOS prompt is the average for this machine and adapter.
-The native Tandy modes stretch the 120 x 160 internal display to fill
-all 160 x 200 hardware pixels, preserving the 16 RGBI palette entries.
-Use DOOMTGA with DOOMT16.WAD, not DOOMCGA with DOOM4.WAD, for
-16-color graphics. F5 only cycles palettes in the 4-color CGA build.
+Only DOOM.EXE should be launched. The other .OVL files
+are full 16-bit DOS engines loaded by the DOS EXEC
+function so the tiny launcher does not occupy game RAM.
+No direct DOOMTGA.EXE or DOOMVGA.EXE is required.
 
-The executable can also read game data straight from disk with -noems
-and -noxms. -nosound disables sound effects.
+All ordinary game arguments are forwarded:
+  DOOM -tandy -timedemo demo3 -quick
+  DOOM -vga -noems -noxms -nosound
 
-Requires the matching prepared DOOMT16.WAD, DOOM4.WAD or DOOM1.WAD.
-The game data are the DOOM shareware episode. Engine source and license:
-https://github.com/ARMoir/DOOM/tree/master/tandydos
-https://github.com/FrenkelS/Doom8088
+Use BENCH.BAT to time fast/detail Tandy video on real
+hardware. Use Ctrl to fire, arrows to move, Space to
+open doors, F10 to exit. 640 KB conventional memory
+is recommended.
+
+Source and license:
+https://github.com/ARMoir/DOOM
