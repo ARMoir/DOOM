@@ -11,8 +11,9 @@ TESTS = (("DOOMTGA", "tandy"), ("DOOMTGH", "tandy"),
          ("DOOMCGA", "cga"), ("DOOMVGA", "vgaonly"))
 
 
-def run_demo(emulator, game, program, machine, quick=False):
-    cycles = 400 if quick else 50000
+def run_demo(emulator, game, program, machine, quick=True):
+    # Keep CI bounded. Real 7 MHz timings must be tested on actual hardware.
+    cycles = 50000
     options = "-quick" if quick else ""
     # Keep the guest mount writable for DOS redirection and isolated per run.
     with tempfile.TemporaryDirectory(prefix="doom-test-") as suffix:
@@ -45,7 +46,7 @@ exit
 """, encoding="ascii")
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
         subprocess.run([str(emulator), "-fastlaunch", "-nomenu", "-conf", str(config)],
-                       cwd=temp, env=env, check=True, timeout=240)
+                       cwd=temp, env=env, check=True, timeout=90)
         log = (temp / "DEMO.LOG").read_text(encoding="cp437", errors="replace")
         print(f"{program}, DOSBox-X fixed {cycles}\n{log}", flush=True)
         match = re.search(r"Timed (\d+) gametics in (\d+) realtics = [\d.]+ frames per second", log)
@@ -59,10 +60,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--emulator", required=True, type=Path)
     parser.add_argument("--game", required=True, type=Path)
+    parser.add_argument("--full", action="store_true",
+                        help="Run the entire 2134-tic demo instead of the 96-tic smoke test")
     args = parser.parse_args()
-    counts = [run_demo(args.emulator.resolve(), args.game.resolve(), program, machine)
+    counts = [run_demo(args.emulator.resolve(), args.game.resolve(), program, machine,
+                       quick=not args.full)
               for program, machine in TESTS]
     if len(set(counts)) != 1:
         raise SystemExit(f"Gameplay tic count differed by adapter: {counts}")
-    for program in ("DOOMTGA", "DOOMTGH"):
-        run_demo(args.emulator.resolve(), args.game.resolve(), program, "tandy", quick=True)

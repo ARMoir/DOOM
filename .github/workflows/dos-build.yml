@@ -2,7 +2,14 @@ name: DOS build
 
 on:
   push:
+    branches:
+      - master
   workflow_dispatch:
+
+# Do not race a release from a new push against cleanup from an older run.
+concurrency:
+  group: doom-dos-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -10,6 +17,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
+    permissions:
+      contents: write
     timeout-minutes: 25
     outputs:
       artifact-id: ${{ steps.publish.outputs.artifact-id }}
@@ -49,7 +58,7 @@ jobs:
       - name: Prepare the shareware episode and the CompactFlash directory
         run: python tandydos/prepare.py --bin build/exe --out build/DOOMDOS
 
-      - name: Play demo3 on Tandy, CGA and VGA in real-mode DOS
+      - name: Smoke-test 96 demo tics on all four real-mode DOS builds
         run: python tandydos/smoke.py --emulator .dos-tools/dosbox/mingw-build/mingw-sdl2/dosbox-x.exe --game build/DOOMDOS
 
       - name: Publish playable DOS build
@@ -60,16 +69,83 @@ jobs:
           path: build/DOOMDOS/
           if-no-files-found: error
 
+
+      - name: Archive complete CompactFlash-ready DOS directory
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/DOOMDOS/* -DestinationPath build/DOOM-DOS.zip
+          if (!(Test-Path build/DOOM-DOS.zip)) { throw 'DOS release archive missing' }
+
+      - name: Publish verified DOS release
+        if: github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dos-build-${{ github.run_number }}
+          name: DOOM DOS build #${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: build/DOOM-DOS.zip
+          body: |
+            Real-mode DOS build from commit ${{ github.sha }}.
+            Includes Tandy 160x200 (fast and high detail), CGA, VGA,
+            and matching shareware Episode 1 data. Built and smoke-tested
+            in DOSBox-X using the 8086 CPU mode. Real Tandy 7 MHz
+            playability and frame rates still require hardware verification.
+
   prune:
     needs: build
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       actions: write
     # Serialize only housekeeping. Every push still gets its own build.
     concurrency:
       group: doom-dos-artifact-cleanup
       cancel-in-progress: false
     steps:
+      - name: Delete old releases only after verifying the new ZIP exists
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const tag = `dos-build-${context.runNumber}`;
+            const current = (await github.rest.repos.getReleaseByTag({
+              ...repo, tag
+            })).data;
+            if (current.draft || !current.assets.some(asset =>
+              asset.name === 'DOOM-DOS.zip' && asset.size > 0)) {
+              throw new Error('New DOS release is missing its ZIP: refusing cleanup');
+            }
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              ...repo, per_page: 100
+            });
+            const newer = releases.some(release => {
+              const match = /^dos-build-(\d+)$/.exec(release.tag_name);
+              return match && Number(match[1]) > context.runNumber;
+            });
+            if (newer) {
+              core.warning('A newer DOS release exists; preserving it and skipping older-run cleanup');
+              return;
+            }
+            for (const release of releases) {
+              if (release.id === current.id) continue;
+              await github.rest.repos.deleteRelease({
+                ...repo, release_id: release.id
+              });
+              core.info(`Deleted old release ${release.tag_name}`);
+              if (/^dos-build-\d+$/.test(release.tag_name)) {
+                try {
+                  await github.rest.git.deleteRef({
+                    ...repo, ref: `tags/${release.tag_name}`
+                  });
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+              }
+            }
+
       - name: Keep the newest verified build from this workflow
         uses: actions/github-script@v7
         env:
