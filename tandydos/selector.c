@@ -114,6 +114,10 @@ static void help(void)
     puts("  -video MODE    auto / tandy / tandyhi / cga / vga");
     puts("  -auto          Enable automatic detection");
     puts("  -detect        Report detected mode and exit");
+    puts("  -sound MODE    auto / tandy / pc (independent of video)");
+    puts("  -nomusic       Sound effects only");
+    puts("  -nosfx         Music only when Tandy PSG is present");
+    puts("  -nosound       Disable music and effects");
     puts("  -help          Show this help");
     puts("Example: DOOM -tandy -timedemo demo3 -quick");
     puts("Other options are passed to the selected game engine.");
@@ -166,6 +170,8 @@ int main(int argc, char **argv)
     selected = override == VIDEO_AUTO ? detected : override;
     if (detect_only) {
         printf("Detected video: %s\n", mode_name(detected));
+        printf("Detected sound: %s\n",
+               has_tandy() ? "Tandy PSG (ROM signature)" : "PC speaker");
         if (selected != detected)
             printf("Override: %s\n", mode_name(selected));
         return 0;

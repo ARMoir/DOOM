@@ -1,4 +1,4 @@
-"""Run the complete shareware demo on all three emulated DOS adapters."""
+"""Test automatic/forced DOS video and sound using 96 game tics per mode."""
 
 import argparse
 import os
@@ -9,17 +9,25 @@ import tempfile
 
 # Exercise the one user-facing EXE in auto and explicit modes.
 TESTS = (
-    ("tandy", "-auto", "Tandy 16-color (fast) (auto)"),
-    ("vgaonly", "-auto", "VGA 256-color (auto)"),
-    ("cga", "-auto", "CGA 4-color (auto)"),
-    ("tandy", "-tandy", "Tandy 16-color (fast) (forced)"),
-    ("tandy", "-tandyhi", "Tandy 16-color (detail) (forced)"),
-    ("cga", "-cga", "CGA 4-color (forced)"),
-    ("vgaonly", "-vga", "VGA 256-color (forced)"),
+    # machine, command-line video/sound overrides, expected video, expected audio
+    ("tandy", "-auto", "Tandy 16-color (fast) (auto)", "Tandy PSG"),
+    ("vgaonly", "-auto", "VGA 256-color (auto)", "PC speaker"),
+    ("cga", "-auto", "CGA 4-color (auto)", "PC speaker"),
+    ("tandy", "-tandy", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
+    ("tandy", "-tandyhi", "Tandy 16-color (detail) (forced)", "Tandy PSG"),
+    ("cga", "-cga", "CGA 4-color (forced)", "PC speaker"),
+    ("vgaonly", "-vga", "VGA 256-color (forced)", "PC speaker"),
+    # Audio must be independent of video and overridable on a Tandy.
+    ("tandy", "-tandy -sound tandy", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
+    ("tandy", "-tandy -sound pc", "Tandy 16-color (fast) (forced)", "PC speaker"),
+    ("tandy", "-tandy -nomusic", "Tandy 16-color (fast) (forced)", "effects only"),
+    ("tandy", "-tandy -nosfx", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
+    ("tandy", "-tandy -nosound", "Tandy 16-color (fast) (forced)", "sound disabled"),
+    ("vgaonly", "-vga -sound pc", "VGA 256-color (forced)", "PC speaker"),
 )
 
 
-def run_demo(emulator, game, machine, switch, selected, quick=True):
+def run_demo(emulator, game, machine, switch, selected, audio, quick=True):
     # Keep CI bounded. Real 7 MHz timings must be tested on actual hardware.
     cycles = 50000
     options = "-quick" if quick else ""
@@ -68,7 +76,7 @@ exit
         expected = 96 if quick else 2134
         if (not (temp / "PASS.TXT").exists() or not match or
                 int(match[1]) != expected or int(match[2]) < 1 or
-                "Video: " + selected not in log):
+                "Video: " + selected not in log or audio not in log):
             raise RuntimeError(switch + " did not finish the recorded game in DOS")
         return int(match[1])
 
@@ -81,7 +89,7 @@ if __name__ == "__main__":
                         help="Run the entire 2134-tic demo instead of the 96-tic smoke test")
     args = parser.parse_args()
     counts = [run_demo(args.emulator.resolve(), args.game.resolve(),
-                       machine, switch, selected, quick=not args.full)
-              for machine, switch, selected in TESTS]
+                       machine, switch, selected, audio, quick=not args.full)
+              for machine, switch, selected, audio in TESTS]
     if len(set(counts)) != 1:
         raise SystemExit(f"Gameplay tic count differed by adapter: {counts}")

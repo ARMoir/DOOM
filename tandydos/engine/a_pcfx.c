@@ -132,12 +132,21 @@ void PCFX_Play(int16_t lumpnum)
 
 	const pcspkmuse_t __far* pcspkmuse = W_GetLumpByNum(lumpnum);
 	PCFX_LengthLeft = pcspkmuse->length;
-	_fmemcpy(data, pcspkmuse->data, pcspkmuse->length * sizeof(uint16_t));
+	/* Reject or clip truncated/oversized effects before copying into the
+	 * fixed buffer; the WAD is external disk data. */
+	if (W_LumpLength(lumpnum) < 2)
+		PCFX_LengthLeft = 0;
+	else if (PCFX_LengthLeft > (W_LumpLength(lumpnum) - 2) / 2)
+		PCFX_LengthLeft = (W_LumpLength(lumpnum) - 2) / 2;
+	if (PCFX_LengthLeft > 146)
+		PCFX_LengthLeft = 146;
+	if (PCFX_LengthLeft > 0)
+		_fmemcpy(data, pcspkmuse->data, PCFX_LengthLeft * sizeof(uint16_t));
 	Z_ChangeTagToCache(pcspkmuse);
 
 	_disable();
 
-	PCFX_Sound = &data[0];
+	PCFX_Sound = PCFX_LengthLeft ? &data[0] : NULL;
 
 	_enable();
 }

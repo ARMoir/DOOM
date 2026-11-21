@@ -67,3 +67,40 @@ The internal `.OVL` files are separate MZ DOS executables loaded via
 DOS EXEC so the game can use memory that would otherwise belong to a
 resident launcher. All `.OVL` files and WADs must stay alongside
 `DOOM.EXE`.
+
+## Native Tandy 1000 PSG sound
+
+DOOM now detects audio hardware **independently from the video
+adapter**. The Tandy ROM signature selects the PSG at I/O port
+`0xC0`, even if VGA is installed. Other PCs default to the original
+single-voice PC speaker. The same DOS executable supports:
+
+| Switch | Sound output |
+| --- | --- |
+| `DOOM` or `DOOM -sound auto` | Tandy PSG on recognized Tandy 1000s; otherwise PC speaker |
+| `DOOM -sound tandy` | Force Tandy 3-tone SN76489-compatible PSG plus noise |
+| `DOOM -sound pc` | Force one-voice PC speaker using the old DOS driver |
+| `DOOM -nomusic` | Sound effects only |
+| `DOOM -nosfx` | Music only (when the Tandy PSG is enabled) |
+| `DOOM -nosound` | Disable both music and effects |
+
+The new PSG driver adapts TandyAMP's cached tone/attenuation/noise
+register-writing strategy, converting the existing 140 Hz Muse
+PC-speaker effect pitch tables to the PSG's 10-bit dividers. It can
+play **up to three independent prioritized tone effects** with a
+fourth noise channel for impacts, weapons and explosions. Tone and
+noise changes are scheduled in the existing 140 Hz task service;
+there is no PCM mixer, runtime MIDI parser or additional timer IRQ.
+
+A small **original** repeating 3-part minor-key ambience is enabled
+on Tandy unless `-nomusic` is supplied. It yields to sound effects
+on every occupied tone voice and resumes when the voice is free.
+It is a placeholder demonstration of the PSG music pipeline, **not
+a transcription or licensed copy of DOOM's original score**. It uses
+no additional music files or WAD data and is automatically disabled
+on PC speaker.
+
+Audio detection is based on the Tandy ROM signature, not a probing
+write to an unknown I/O port. `-sound tandy` forces port `0xC0`;
+use only when that PSG really exists. Sound output and real-world
+performance require validation on physical 7 MHz Tandy hardware.

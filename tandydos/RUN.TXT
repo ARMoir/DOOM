@@ -39,3 +39,18 @@ is recommended.
 
 Source and license:
 https://github.com/ARMoir/DOOM
+
+SOUND (works independently of video adapter):
+  DOOM -sound auto     Tandy PSG when Tandy ROM detected, else PC
+  DOOM -sound tandy    Force Tandy's 3-tone + noise sound hardware
+  DOOM -sound pc       Force traditional one-voice PC speaker
+  DOOM -nosound        Silence all effects and music
+  DOOM -nosfx          Background music only (on Tandy PSG)
+  DOOM -nomusic        Sound effects only
+
+On Tandy: 3 independent tone effects, separate noise bursts and
+low-CPU original background music. Effects always replace music
+on occupied PSG voices and the melody resumes automatically. The
+music is an original hardware demo loop, NOT Bobby Prince's Doom
+soundtrack. Non-Tandy PCs default to PC speaker with no music.
+Only force Tandy PSG on machines that actually have that hardware.
