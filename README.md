@@ -126,3 +126,34 @@ game's wall/sprite shading still uses the original EGA-derived color
 tables. If gameplay colors are also visibly incorrect on a physical
 Tandy, those should be validated separately rather than assuming
 the offline title-art conversion fixed them.
+
+
+## Physical Tandy in-game de-dithering
+
+The photographic test from the Tandy 1000 EX showed regular grey
+checkerboard ceilings and floors, colorful wall columns and a
+heavily dithered status bar in **DOOMTGH**. The title-only update in
+build #14 did not change the world/sprite drawing data.
+
+The new offline Tandy WAD conversion also changes the EGA 16-color
+**COLORMAP** output values (all lighting levels) and verified DOOM
+patch-column samples (including sprites, textures and HUD patches).
+Each source dither color pair is averaged in RGB and mapped to the
+nearest *single* RGBI color; this nibble is repeated so the game's
+120-pixel internal framebuffer has no extra high-frequency
+two-color EGA dither pattern. Headers, WAD lump numbers, map data,
+post lengths, source dimensions and the original color lookup
+indices are preserved. It also corrects the fallback flat sky
+constant from `0x07` to `0x77`, because this
+renderer interprets the value as **two packed colors**, not a
+single 4-bit index. Otherwise the floor/sky filler alternates
+the nibbles on successive scanlines and creates checkerboards.
+
+**There is no runtime quantization or extra display processing.**
+All of it runs in `tandydos/prepare.py` on the CI build
+machine; the EX keeps the existing four-bit packed framebuffer and
+140 Hz PSG audio. This intentionally trades some EGA micro-dither
+detail for cleaner 160-color-position patterns on the Tandy's
+actual 16-color output. The physical photo remains the final test:
+DOSBox-X smoke tests verify program execution but cannot judge
+CRT color quality.

@@ -101,6 +101,90 @@ def quantize_raw_vga(raw, palette, width):
     return bytes(out)
 
 
+
+# The EGA Doom8088 WAD's wall/sprite colors are two four-bit dither
+# samples per byte. On EGA those are displayed as separate subpixels.
+# The Tandy 160x200 framebuffer cannot resolve that pattern well; at
+# 120 logical pixels wide it becomes a pronounced pink/green checker.
+# Blend each pair to ONE RGBI hue and repeat the nibble. This also
+# keeps palette lookup out of the 7 MHz game's inner rendering loops.
+def solid_rgbi_byte(value):
+    high = value >> 4
+    low = value & 15
+    if high == low:
+        return value
+    a = TANDY_RGBI[high]
+    b = TANDY_RGBI[low]
+    blended = nearest_rgbi((a[0] + b[0] + 1) // 2,
+                           (a[1] + b[1] + 1) // 2,
+                           (a[2] + b[2] + 1) // 2)
+    return (blended << 4) | blended
+
+
+SOLID_RGBI = bytes(solid_rgbi_byte(value) for value in range(256))
+
+
+def solidify_colormap(data):
+    """Convert each lighting-level lookup result to a solid RGBI pixel."""
+    if len(data) < 32 * 256 or len(data) % 256:
+        raise ValueError("Unexpected EGA COLORMAP size")
+    return data.translate(SOLID_RGBI)
+
+
+def solidify_patch(data):
+    """Convert real DOOM patch posts, preserving headers and offsets.
+
+    Only transform well-formed patch data. A patch starts with four
+    signed shorts and width 32-bit column offsets, followed by
+    column posts: topdelta, length, pad, pixels, pad, terminator FF.
+    Game map lumps and raw resources must never be reinterpreted
+    as patch data. Validate ALL columns before modifying any byte.
+    """
+    if len(data) < 13:
+        return data
+    width, height, _, _ = struct.unpack_from("<hhhh", data)
+    if not (0 < width <= 320 and 0 < height <= 256):
+        return data
+    directory_end = 8 + 4 * width
+    if directory_end >= len(data):
+        return data
+    spans = []
+    visited = set()
+    for column in range(width):
+        pos = struct.unpack_from("<I", data, 8 + column * 4)[0]
+        if pos < directory_end or pos >= len(data):
+            return data
+        if pos in visited:
+            continue
+        visited.add(pos)
+        # Posts cannot exceed the source buffer.
+        for _ in range(256):
+            if pos >= len(data):
+                return data
+            top = data[pos]
+            if top == 255:
+                break
+            if pos + 4 > len(data):
+                return data
+            length = data[pos + 1]
+            if length == 0 or top >= height or top + length > height:
+                return data
+            end = pos + length + 4
+            if end > len(data):
+                return data
+            spans.append((pos + 3, pos + 3 + length))
+            pos = end
+        else:
+            return data
+    if not spans:
+        return data
+    result = bytearray(data)
+    for start, end in spans:
+        result[start:end] = data[start:end].translate(SOLID_RGBI)
+    return bytes(result)
+
+
+
 def pack_tandy(ega_wad, vga_wad):
     """Use EGA gameplay lumps, but source all raw artwork from clean VGA.
 
@@ -127,6 +211,16 @@ def pack_tandy(ega_wad, vga_wad):
             if len(data) != RAW_SIZES[key] // 4:
                 raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
+        elif key == b"COLORMAP":
+            # Rebuild the 34 lighting tables as 4bpp solid-color
+            # values: walls, skies, floors and sprite shades all
+            # lookup these entries in their existing 8086 paths.
+            data = solidify_colormap(data)
+        elif key not in (b"PLAYPAL", b"TEXTURE1", b"TEXTURE2", b"PNAMES"):
+            # Validate every patch's post structure; transforms its
+            # pixel samples only (weapons, enemies, faces, HUD, walls).
+            # Identical nibble pairs have no EGA checkerboard.
+            data = solidify_patch(data)
         entries.append(ENTRY.pack(len(result), len(data), name))
         result.extend(data)
     if converted != RAW_SIZES.keys():

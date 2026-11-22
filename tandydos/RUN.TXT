@@ -61,3 +61,13 @@ The Tandy title, help, map, status bar and tiled background now
 use clean VGA artwork converted to the Tandy 16-color RGBI palette
 offline. DOOMT16.WAD must be replaced along with the new release.
 No separate runtime palette or graphics option is needed.
+
+
+IN-GAME TANDY COLOR FIX:
+Replace DOOMT16.WAD and the .OVL game binaries together.
+The new WAD eliminates two-color EGA dithering from verified
+wall/sprite/UI patch pixels and all COLORMAP lighting levels.
+The flat sky constant is now a full 4-bit RGBI nibble pair.
+This should eliminate the checkerboard ceiling/floor and
+much of the garish vertical wall coloring seen on the EX.
+No additional CPU work is required at runtime.
