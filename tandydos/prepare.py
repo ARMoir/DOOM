@@ -28,34 +28,112 @@ HEADER = struct.Struct("<4sII")
 ENTRY = struct.Struct("<II8s")
 
 
-def pack_tandy(wad):
-    """Convert raw RGBI pictures to mode 08h. Preserve map lump indices."""
+# IBM/Tandy 16-color RGBI palette, in the hardware's 0..15 order.
+# Prepare on the modern host: no color mixing or palette lookup at 7 MHz.
+TANDY_RGBI = (
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0xaa),
+    (0x00, 0xaa, 0x00), (0x00, 0xaa, 0xaa),
+    (0xaa, 0x00, 0x00), (0xaa, 0x00, 0xaa),
+    (0xaa, 0x55, 0x00), (0xaa, 0xaa, 0xaa),
+    (0x55, 0x55, 0x55), (0x55, 0x55, 0xff),
+    (0x55, 0xff, 0x55), (0x55, 0xff, 0xff),
+    (0xff, 0x55, 0x55), (0xff, 0x55, 0xff),
+    (0xff, 0xff, 0x55), (0xff, 0xff, 0xff),
+)
+
+def wad_lumps(wad):
+    """Preserve WAD directory indices; verify all lump spans."""
+    if len(wad) < HEADER.size:
+        raise ValueError("Truncated IWAD header")
     magic, count, directory = HEADER.unpack_from(wad)
-    if magic != b"IWAD" or directory + count * ENTRY.size > len(wad):
-        raise ValueError("Expected a complete Doom8088 EGA IWAD")
+    if magic != b"IWAD" or directory > len(wad) or count > (len(wad) - directory) // ENTRY.size:
+        raise ValueError("Expected a complete Doom8088 IWAD")
+    result = {}
+    order = []
+    for index in range(count):
+        offset, size, name = ENTRY.unpack_from(wad, directory + index * ENTRY.size)
+        if offset > len(wad) or size > len(wad) - offset:
+            raise ValueError("Truncated WAD lump " + repr(name))
+        key = name.rstrip(b"\0")
+        order.append((name, offset, size))
+        if key not in result:
+            result[key] = wad[offset:offset + size]
+    return order, result
+
+
+def nearest_rgbi(red, green, blue):
+    """Perceptually weighted integer nearest-color quantization."""
+    best, best_error = 0, 1 << 30
+    for index, (r, g, b) in enumerate(TANDY_RGBI):
+        dr, dg, db = red-r, green-g, blue-b
+        error = dr*dr*3 + dg*dg*4 + db*db*2
+        if error < best_error:
+            best_error, best = error, index
+    return best
+
+
+def quantize_raw_vga(raw, palette, width):
+    """VGA indexed RGB 2:1 downsample to contiguous packed RGBI nibbles.
+
+    The VGA image stores ONE palette index per pixel. EGA assets in
+    Doom8088 are pre-dithered PAIRS of colors per byte; taking
+    alternating nibbles there causes colored speckling/moire on Tandy.
+    """
+    if width % 4 or len(raw) % width:
+        raise ValueError("VGA graphic width must be divisible by four")
+    if len(palette) < 256 * 3:
+        raise ValueError("VGA PLAYPAL is incomplete")
+    rgb = tuple(tuple(palette[p:p+3]) for p in range(0, 256 * 3, 3))
+    out = bytearray(len(raw) // 4)
+    dest = 0
+    for row_start in range(0, len(raw), width):
+        row = raw[row_start:row_start + width]
+        for x in range(0, width, 4):
+            a, b, c, d = (rgb[row[x+i]] for i in range(4))
+            left = nearest_rgbi((a[0]+b[0]+1)//2,
+                                (a[1]+b[1]+1)//2,
+                                (a[2]+b[2]+1)//2)
+            right = nearest_rgbi((c[0]+d[0]+1)//2,
+                                 (c[1]+d[1]+1)//2,
+                                 (c[2]+d[2]+1)//2)
+            out[dest] = (left << 4) | right
+            dest += 1
+    return bytes(out)
+
+
+def pack_tandy(ega_wad, vga_wad):
+    """Use EGA gameplay lumps, but source all raw artwork from clean VGA.
+
+    Original lump numbering/order is preserved. Output raw sizes match
+    the current 120px internal RGBI framebuffer (60 bytes per scanline).
+    """
+    ega_order, _ = wad_lumps(ega_wad)
+    _, vga_lumps = wad_lumps(vga_wad)
+    palette = vga_lumps.get(b"PLAYPAL")
+    if palette is None or len(palette) < 256 * 3:
+        raise ValueError("VGA WAD is missing its PLAYPAL RGB palette")
     result = bytearray(HEADER.size)
     entries = []
     converted = set()
-    for index in range(count):
-        offset, size, name = ENTRY.unpack_from(wad, directory + index * ENTRY.size)
-        if offset + size > len(wad):
-            raise ValueError("Truncated WAD lump " + repr(name))
-        data = wad[offset:offset + size]
+    for name, offset, size in ega_order:
         key = name.rstrip(b"\0")
+        data = ega_wad[offset:offset+size]
         if key in RAW_SIZES:
-            if size != RAW_SIZES[key]:
-                raise ValueError("Unexpected dimensions for " + repr(key))
-            # Four 240-wide source samples occupy two native Tandy pixels.
-            # Each source sample already has two dithered RGBI colors.
-            data = bytes((hi & 0xf0) | (lo & 0x0f) for hi, lo in zip(data[::4], data[2::4]))
+            vga_data = vga_lumps.get(key)
+            if vga_data is None or len(vga_data) != RAW_SIZES[key]:
+                raise ValueError("VGA picture missing or has wrong size: " + repr(key))
+            width = 64 if key == b"FLOOR4_8" else 240
+            data = quantize_raw_vga(vga_data, palette, width)
+            if len(data) != RAW_SIZES[key] // 4:
+                raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
         entries.append(ENTRY.pack(len(result), len(data), name))
         result.extend(data)
     if converted != RAW_SIZES.keys():
-        raise ValueError("Missing raw pictures in the Doom8088 EGA WAD")
-    HEADER.pack_into(result, 0, magic, count, len(result))
+        raise ValueError("Missing raw pictures in the EGA Doom8088 WAD")
+    HEADER.pack_into(result, 0, b"IWAD", len(entries), len(result))
     result.extend(b"".join(entries))
-    return result
+    return bytes(result)
 
 
 def prepare(output, binaries, archives, modes):
@@ -63,8 +141,16 @@ def prepare(output, binaries, archives, modes):
     # Keep existing outputs intact if an archive is unavailable or invalid.
     with tempfile.TemporaryDirectory(dir=output) as tmp:
         stage = Path(tmp)
-        for mode in modes:
-            video, wad_name, exe_name, digest = MODES[mode]
+        # The Tandy WAD uses the EGA game's compact engine data, but
+        # converts the five raw screen pictures from *VGA*, not from
+        # the EGA release's noisy pre-dithered dual-pixel bytes.
+        # Verify the upstream archives before trusting their contents.
+        cached_wads = {}
+
+        def load_wad(mode):
+            if mode in cached_wads:
+                return cached_wads[mode]
+            video, wad_name, _, digest = MODES[mode]
             archive_name = f"DOOM8088-{video}-{TAG}.zip"
             if archives:
                 archive = (archives / archive_name).read_bytes()
@@ -75,10 +161,18 @@ def prepare(output, binaries, archives, modes):
             if sha256(archive).hexdigest() != digest:
                 raise ValueError("Checksum mismatch for " + archive_name)
             with ZipFile(BytesIO(archive)) as source:
-                member, = [n for n in source.namelist() if Path(n).name.upper() == wad_name]
+                member, = [n for n in source.namelist()
+                           if Path(n).name.upper() == wad_name]
                 wad = source.read(member)
+            cached_wads[mode] = wad
+            return wad
+
+        for mode in modes:
+            video, wad_name, exe_name, digest = MODES[mode]
+            wad = load_wad(mode)
             if mode == "tandy":
-                wad_name, wad = "DOOMT16.WAD", pack_tandy(wad)
+                wad_name, wad = "DOOMT16.WAD", pack_tandy(
+                    wad, load_wad("vga"))
             (stage / wad_name).write_bytes(wad)
             shutil.copyfile(binaries / exe_name, stage / (Path(exe_name).stem + ".OVL"))
             if mode == "tandy":

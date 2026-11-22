@@ -22,7 +22,7 @@ Use the arrows to move, Ctrl to fire, Space to open doors, Tab for the automap, 
 
 Install Open Watcom v2 and Python 3 on a modern host. Set `WATCOM` to the compiler installation directory and run `python tandydos/build.py` from the repository root. It builds the four DOS renderer programs with the medium memory model and 8086 instruction set, plus the small-model `DOOM.EXE` selector. The release renames the renderer MZ programs to `.OVL`, keeping only one user-facing executable. Each target has its own compile and link directory.
 
-The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. The Tandy backend follows [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) in selecting BIOS mode 08h and blitting packed scanlines to the two banks at B800h. DOOMTGA and DOOMCGA project 30 columns and shade two rows per texture sample. DOOMTGH projects 60 columns at full vertical detail. Both Tandy builds keep a 9,600-byte packed buffer, then stretch each 120-pixel RGBI row to 160 pixels and each 160-row frame to 200 rows as they copy it to the Tandy mode 08h interleaved video banks. This fills the physical CRT at the cost of extra copy work; the 3D renderer still processes only 30 or 60 columns. Each of the 16 palette registers is explicitly set to its canonical 4-bit RGBI value with Tandy BIOS INT 10h AX=1000h; damage/bonus border effects use AX=1001h without reducing in-game color depth. Experimental 8086 blit/texture-scaler assembly is retained in the source but disabled because it has not passed the 8086 smoke test. Run `BENCH.BAT` on your EX to compare the same 96 game tics in both native modes. The slower CI comparison uses DOSBox-X at 400 fixed cycles per millisecond. That setting measures relative speed and has no precise MHz equivalence. The desktop converter prepares the title, status bar, intermission and finale pictures before they reach the XT. Source notices are retained in [tandydos/engine](tandydos/engine).
+The port links the argument parser and deterministic random number generator directly from [id Software's Linux DOOM 1.10](linuxdoom-1.10). The segmented engine, Episode 1 game logic and low-detail renderers come from [Frenkel Smeijers' Doom8088](https://github.com/FrenkelS/Doom8088/tree/b3073a2eb2811cd14caba6549694fc3bfcd6dd29), through GBADoom and PrBoom. The Tandy backend follows [WolfensteinCGA](https://github.com/jhhoward/WolfensteinCGA) in selecting BIOS mode 08h and blitting packed scanlines to the two banks at B800h. DOOMTGA and DOOMCGA project 30 columns and shade two rows per texture sample. DOOMTGH projects 60 columns at full vertical detail. Both Tandy builds keep a 9,600-byte packed buffer, then stretch each 120-pixel RGBI row to 160 pixels and each 160-row frame to 200 rows as they copy it to the Tandy mode 08h interleaved video banks. This fills the physical CRT at the cost of extra copy work; the 3D renderer still processes only 30 or 60 columns. Each of the 16 palette registers is explicitly set to its canonical 4-bit RGBI value with Tandy BIOS INT 10h AX=1000h; damage/bonus border effects use AX=1001h without reducing in-game color depth. Experimental 8086 blit/texture-scaler assembly is retained in the source but disabled because it has not passed the 8086 smoke test. Run `BENCH.BAT` on your EX to compare the same 96 game tics in both native modes. The slower CI comparison uses DOSBox-X at 400 fixed cycles per millisecond. That setting measures relative speed and has no precise MHz equivalence. The desktop converter uses the clean VGA 256-color art and palette to precompute a sharp 16-color RGBI title, status bar, map and background images; the EGA archive supplies the remaining small 16-color engine data. This work happens on a modern host, so the EX's runtime CPU cost is unchanged. Source notices are retained in [tandydos/engine](tandydos/engine).
 
 ## WolfensteinCGA compatibility and hardware validation
 
@@ -104,3 +104,25 @@ Audio detection is based on the Tandy ROM signature, not a probing
 write to an unknown I/O port. `-sound tandy` forces port `0xC0`;
 use only when that PSG really exists. Sound output and real-world
 performance require validation on physical 7 MHz Tandy hardware.
+
+
+## Tandy title art color correction
+
+The previous Tandy WAD reconstructed four-bit pixels by selecting
+alternating nibbles from the upstream **pre-dithered EGA** full-screen
+pictures, producing strong colored speckling when enlarged to 160x200.
+The converted `DOOMT16.WAD` now retains its EGA gameplay resources and
+lump ordering but constructs **TITLEPIC, HELP2, WIMAP0, STBAR, and
+FLOOR4_8** from the verified upstream **VGA** shareware WAD instead.
+The VGA pictures use direct 256-color palette indices. On the build
+machine, neighboring source pixels are averaged in RGB and quantized
+to the standard IBM/Tandy 16-color RGBI palette. The result is packed
+into two four-bit Tandy pixels per byte. No extra work is done on the
+7 MHz EX. Both original release archives are hash verified and
+visual-data sizes and lump order are tested.
+
+This change targets the title/intermission/status-bar artwork; the
+game's wall/sprite shading still uses the original EGA-derived color
+tables. If gameplay colors are also visibly incorrect on a physical
+Tandy, those should be validated separately rather than assuming
+the offline title-art conversion fixed them.

@@ -54,3 +54,10 @@ on occupied PSG voices and the melody resumes automatically. The
 music is an original hardware demo loop, NOT Bobby Prince's Doom
 soundtrack. Non-Tandy PCs default to PC speaker with no music.
 Only force Tandy PSG on machines that actually have that hardware.
+
+
+TITLE SCREEN COLOR FIX:
+The Tandy title, help, map, status bar and tiled background now
+use clean VGA artwork converted to the Tandy 16-color RGBI palette
+offline. DOOMT16.WAD must be replaced along with the new release.
+No separate runtime palette or graphics option is needed.
