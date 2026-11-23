@@ -106,3 +106,12 @@ DOOM -tandyhi -textures clean     Conservative wall cleanup test
 DOOM -tandy -textures clean       Fast rendering of clean textures
 DOOMT16.WAD is Classic; DOOMTC.WAD is Clean; keep both files.
 See CLEAN.TXT for actual changed texture names and counts.
+
+TANDY CRT & RESPONSIVENESS:
+- Flat ceilings/floors now use a stable RGBI color per column
+  rather than alternate EGA colors on every scanline.
+- The keyboard queue now retains recent key presses/releases after
+  a slow frame, and input is polled before tic command building.
+- Tandy demo background music is OFF by default (too repetitive).
+  PSG effects stay enabled. Use -ambient to opt in to the demo loop.
+- For the fastest response use DOOM -tandy, not DOOM -tandyhi.

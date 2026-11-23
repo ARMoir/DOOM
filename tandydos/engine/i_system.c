@@ -70,9 +70,14 @@ void I_InitGraphics(void)
 //
 
 #define KEYBOARDINT 9
-#define KBDQUESIZE 32
-static byte keyboardqueue[KBDQUESIZE];
-static int16_t kbdtail, kbdhead;
+#define KBDQUESIZE 64
+/* 16-bit counters wrap naturally. The ISR ONLY advances head; the
+ * foreground owns tail, avoiding an interrupt/mainline write race.
+ * If the EX cannot drain input during a long render, keep the most
+ * recent 64 scancodes (not stale typematic repeats). */
+static volatile byte keyboardqueue[KBDQUESIZE];
+static volatile uint16_t kbdhead;
+static uint16_t kbdtail;
 static boolean isKeyboardIsrSet = false;
 
 #if defined __DJGPP__ 
@@ -146,8 +151,15 @@ void I_StartTic(void)
 	byte k;
 	event_t ev;
 
-	while (kbdtail < kbdhead)
+    /* When rendering falls behind, discard stale repeat events rather
+       than executing old movement long after the user released a key.
+       Always retain the most recent make/break events. */
+    if ((uint16_t)(kbdhead - kbdtail) > KBDQUESIZE)
+        kbdtail = (uint16_t)(kbdhead - KBDQUESIZE);
+	while ((uint16_t)(kbdhead - kbdtail) != 0)
 	{
+        if ((uint16_t)(kbdhead - kbdtail) > KBDQUESIZE)
+            kbdtail = (uint16_t)(kbdhead - KBDQUESIZE);
 		k = keyboardqueue[kbdtail & (KBDQUESIZE - 1)];
 		kbdtail++;
 

@@ -23,7 +23,9 @@ TESTS = (
     ("tandy", "-tandy -sound tandy", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
     ("tandy", "-tandy -sound pc", "Tandy 16-color (fast) (forced)", "PC speaker"),
     ("tandy", "-tandy -nomusic", "Tandy 16-color (fast) (forced)", "effects only"),
-    ("tandy", "-tandy -nosfx", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
+    ("tandy", "-tandy -nosfx", "Tandy 16-color (fast) (forced)", "sound disabled"),
+    ("tandy", "-tandy -ambient", "Tandy 16-color (fast) (forced)", "original ambient music"),
+    ("tandy", "-tandy -ambient -nosfx", "Tandy 16-color (fast) (forced)", "original ambient music"),
     ("tandy", "-tandy -nosound", "Tandy 16-color (fast) (forced)", "sound disabled"),
     ("vgaonly", "-vga -sound pc", "VGA 256-color (forced)", "PC speaker"),
 )

@@ -275,3 +275,31 @@ A/B testing before replacing this baseline.
 ## Tandy Clean: optional original-art wall experiment
 
 Classic mode (`DOOM -tandyhi -textures classic`) retains the Build #20 world textures and original EGA lighting tables. **Clean** mode (`DOOM -tandyhi -textures clean`) loads the separate `DOOMTC.WAD`. This offline-only experiment picks five common wall-texture families through `TEXTURE1` and `PNAMES` and suppresses isolated pixels surrounded by at least three matching neighbors, keeping prominent edges and all existing color codes/lighting. Actual texture/patch names and changed-pixel counts are in `CLEAN.TXT`. It does not contain any Wolfenstein art. Both modes use the same improved title/HUD, fullscreen display and PSG. **Classic is always the default**, and neither mode needs more runtime memory or CPU work.
+
+
+## Physical Tandy feedback: stable flats, responsiveness, quieter sound
+
+The hardware screenshots of the optional Clean texture mode exposed
+a **different** issue from patch-level speckles: the FLAT_SPAN column
+rasterizer in `i_vcga.c` alternated the high and low EGA
+color nibbles on consecutive rows, producing a pronounced checkerboard
+on a real Tandy CRT. The Tandy build now uses a 256-byte precomputed
+RGBI nearest-color LUT to render flats as single stable hardware
+colors; the wall texture, sprite, title and HUD paths stay untouched.
+CGA and VGA retain their original rendering behavior.
+
+The 7 MHz EX can spend a long time drawing 60-column frames. Keyboard
+scancodes are now retained in a **64-entry, wrapping-safe ring** instead
+of the unsafe 32-entry foreground loop; excess old typematic events
+are dropped in favor of the newest events. On Tandy, inputs are
+polled once per command-building pass even when the 35 Hz tic
+has not advanced, avoiding redundant per-backlog-tic work.
+This does not make a slow renderer instant: use `DOOM -tandy`
+instead of `-tandyhi` if physical input-to-screen latency remains high.
+
+The constantly repeating 16-step PSG demo music is **OFF by default**.
+The Tandy PSG continues to play weapon, monster, door and pickup
+effects by default; use `DOOM -tandy -ambient` to
+enable the original placeholder music for comparison. `-nosound`
+silences both, and `-nosfx -ambient` plays only the demo
+music. This is not the licensed Doom soundtrack.

@@ -124,9 +124,18 @@ static void D_BuildNewTiccmds(void)
     int16_t newtics = I_GetTime() - lastmadetic;
     lastmadetic += newtics;
 
+#if defined VIDEO_MODE_TANDY
+    /* Poll once even if the 35 Hz tic hasn't advanced, so a key
+       arriving while a slow 60-column frame was drawn is not deferred
+       until the next game tic. Per-tic polling in a backlog costs CPU
+       but cannot improve response: the queue is already drained. */
+    I_StartTic();
+#endif
     while (newtics--)
     {
+#if !defined VIDEO_MODE_TANDY
         I_StartTic();
+#endif
         if ((int16_t)(maketic - _g_gametic) > 3)
             break;
 

@@ -124,7 +124,11 @@ void I_InitSound(void)
             sound_device = SOUND_PC;
         }
     }
+    /* The 16-step demo loop is deliberately OPT-IN. Hearing it on every
+       level/attract screen was repetitive on a real Tandy EX. Native
+       weapon and monster PSG sound effects stay on by default. */
     nomusicparm = (sound_device != SOUND_TANDY ||
+                   !M_CheckParm("-ambient") ||
                    M_CheckParm("-nomusic") ||
                    M_CheckParm("-nosound"));
     if (M_CheckParm("-nosound")) nosfxparm = true;
@@ -137,7 +141,7 @@ void I_InitSound(void)
     if (sound_device == SOUND_TANDY) {
         TFX_Init();
         printf("I_InitSound: Tandy PSG 3 tones + noise%s\n",
-               nomusicparm ? " (effects only)" : " (original ambient music)");
+               nomusicparm ? " (effects only)" : " (original ambient music, opt-in)");
     } else {
         PCFX_Init();
         printf("I_InitSound: PC speaker (one voice)\n");

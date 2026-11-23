@@ -116,8 +116,9 @@ static void help(void)
     puts("  -detect        Report detected mode and exit");
     puts("  -sound MODE    auto / tandy / pc (independent of video)");
     puts("  -textures MODE classic / clean (Tandy only)");
-    puts("  -nomusic       Sound effects only");
-    puts("  -nosfx         Music only when Tandy PSG is present");
+    puts("  -ambient       Enable optional short PSG demo music");
+    puts("  -nomusic       Sound effects only (default)");
+    puts("  -nosfx         Disable effects; use -ambient for music");
     puts("  -nosound       Disable music and effects");
     puts("  -help          Show this help");
     puts("Example: DOOM -tandy -timedemo demo3 -quick");

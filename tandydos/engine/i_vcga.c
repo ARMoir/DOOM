@@ -37,6 +37,9 @@
 #include "w_wad.h"
 
 #include "globdata.h"
+#if defined VIDEO_MODE_TANDY
+#include "tandy_flat_color.h"
+#endif
 
 
 #define PLANEWIDTH        80
@@ -552,6 +555,13 @@ static void R_DrawColumnFlat2(uint8_t color, int16_t yl, int16_t count)
 	uint8_t color0;
 	uint8_t color1;
 
+#if defined VIDEO_MODE_TANDY
+    /* Avoid EGA-style alternate-row dither on low-resolution RGBI CRTs.
+       One lookup per column; each source 4-bit lane becomes the same hue.
+       World texture and sprite columns are NOT modified. */
+    color0 = tandy_flat_solid[color];
+    color1 = color0;
+#else
 	if (yl & 1)
 	{
 		color0 = swapNibbles(color);
@@ -562,6 +572,7 @@ static void R_DrawColumnFlat2(uint8_t color, int16_t yl, int16_t count)
 		color0 = color;
 		color1 = swapNibbles(color);
 	}
+#endif
 
 	for (int16_t i = 0; i < count / 2; i++)
 	{
