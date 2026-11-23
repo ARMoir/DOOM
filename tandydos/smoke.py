@@ -17,6 +17,8 @@ TESTS = (
     ("tandy", "-tandyhi", "Tandy 16-color (detail) (forced)", "Tandy PSG"),
     ("tandy", "-tandyhi -textures clean", "Tandy 16-color (detail) (forced)", "Tandy PSG"),
     ("tandy", "-tandy -textures clean", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
+    ("tandy", "-tandyhi -textures art", "Tandy 16-color (detail) (forced)", "Tandy PSG"),
+    ("tandy", "-tandy -textures art", "Tandy 16-color (fast) (forced)", "Tandy PSG"),
     ("cga", "-cga", "CGA 4-color (forced)", "PC speaker"),
     ("vgaonly", "-vga", "VGA 256-color (forced)", "PC speaker"),
     # Audio must be independent of video and overridable on a Tandy.

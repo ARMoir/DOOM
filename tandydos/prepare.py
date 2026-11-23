@@ -10,6 +10,7 @@ import tempfile
 from urllib.request import urlopen
 from zipfile import ZipFile
 from clean_textures import make_clean_patches
+from tandy_art import build_tandy_art_wad
 
 PORT = Path(__file__).resolve().parent
 TAG = "v20260304"
@@ -515,6 +516,16 @@ def prepare(output, binaries, archives, modes):
                 clean_stats = {}
                 clean_wad = pack_tandy(wad, load_wad("vga"), stats=clean_stats, clean_world=True)
                 (stage / "DOOMTC.WAD").write_bytes(clean_wad)
+                art_wad, art_stats = build_tandy_art_wad(
+                    wad, wad_lumps, parse_patch_pixels, HEADER, ENTRY)
+                (stage / "DOOMTA.WAD").write_bytes(art_wad)
+                (stage / "ART.TXT").write_text(
+                    "ORIGINAL TANDY ART TEST - no Wolfenstein game assets\n" +
+                    "DOOM -tandyhi -textures art\n" +
+                    "\n".join(f"{k}: {v}"
+                              for k,v in sorted(art_stats.items())) + "\n",
+                    encoding="ascii")
+                print("Tandy original art experiment:", art_stats, flush=True)
                 print("Tandy Clean experiment:", clean_stats, flush=True)
                 (stage / "CLEAN.TXT").write_text("\n".join("%s: %s"%(k,v) for k,v in sorted(clean_stats.items())) + "\n", encoding="ascii")
                 (stage / "RGBI.TXT").write_text(

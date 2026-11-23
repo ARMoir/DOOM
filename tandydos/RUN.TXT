@@ -115,3 +115,11 @@ TANDY CRT & RESPONSIVENESS:
 - Tandy demo background music is OFF by default (too repetitive).
   PSG effects stay enabled. Use -ambient to opt in to the demo loop.
 - For the fastest response use DOOM -tandy, not DOOM -tandyhi.
+
+NEW OPTIONAL TANDY ART PACK:
+DOOM -tandyhi -textures art   Redesigned green wall, exit door,
+                              medkit, green armor and blue armor.
+DOOM -tandyhi -textures classic  Original-world baseline.
+DOOM -tandyhi -textures clean    Previous speckle-removal experiment.
+DOOMTA.WAD is the original-art WAD. ART.TXT lists replaced patches.
+No original Wolfenstein artwork is redistributed.

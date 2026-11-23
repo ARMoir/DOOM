@@ -303,3 +303,32 @@ effects by default; use `DOOM -tandy -ambient` to
 enable the original placeholder music for comparison. `-nosound`
 silences both, and `-nosfx -ambient` plays only the demo
 music. This is not the licensed Doom soundtrack.
+
+
+## Original Tandy Art: five Wolf3D-inspired concepts, no ripped assets
+
+Select **`DOOM -tandyhi -textures art`** to compare an
+experimental, original pixel-art world with the untouched Classic
+(`-textures classic`) and old Clean (`-textures clean`)
+WADs. This is a distinct `DOOMTA.WAD` built on the same
+stable Doom8088 gameplay color tables, improved Tandy title and HUD.
+
+The host Python generator `tandydos/tandy_art.py` redraws
+**one green techbase wall, one high-contrast exit-style door, a large
+red-cross medkit, a green chestplate armor pickup, and blue armor**.
+Unlike previous speckle filtering, it draws new large forms, borders,
+seams and readable icons at the existing patch dimensions.
+Wall patches keep their original coverage/transparent column posts;
+sprites are rebuilt with new silhouettes, preserving original width,
+height and anchor offsets. EGA source indices are selected by
+examining what the original COLORMAP actually displays on the 16-color
+hardware. **The lighting table is unchanged**: neither world geometry,
+sprites/gameplay logic, display rendering, sound, title screen, nor
+HUD data is modified. The build fails if expected Doom patch names
+are absent. Check `ART.TXT` for the exact wall and sprite
+patch names and chosen color indices.
+
+This is original artwork influenced by Wolfenstein's clear shapes and
+DOOM's industrial look, **not a redistribution of Wolfenstein artwork**.
+Classic remains the default. On 7 MHz hardware the art conversion has
+zero runtime filtering cost and identical game mechanics.

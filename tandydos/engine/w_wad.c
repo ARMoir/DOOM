@@ -182,6 +182,7 @@ void W_Init(void)
     for (i=1; i+1<myargc; ++i) {
         if (stricmp(myargv[i], "-textures") == 0) {
             if (stricmp(myargv[i+1],"clean") == 0) filename = "DOOMTC.WAD";
+            else if (stricmp(myargv[i+1],"art") == 0) filename = "DOOMTA.WAD";
             else if (stricmp(myargv[i+1],"classic") != 0) I_Error("Unknown texture mode");
             break;
         }
