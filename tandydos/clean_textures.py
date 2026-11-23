@@ -27,14 +27,15 @@ def candidate_patches(lumps):
     result=[]
     for i in range(n):
         off=struct.unpack_from("<I",tex,4+4*i)[0]
-        if off+22>len(tex):
+        if off+14>len(tex):
             raise ValueError("Truncated TEXTURE1")
         name=tex[off:off+8].rstrip(b"\0").decode("ascii","replace")
-        patches=struct.unpack_from("<h",tex,off+20)[0]
-        if patches<1 or off+22+10*patches>len(tex):
+        patches=struct.unpack_from("<h",tex,off+12)[0]
+        # Doom8088 TEXTURE1 uses compact 14-byte headers and 6-byte patches.
+        if patches<1 or off+14+6*patches>len(tex):
             raise ValueError("Invalid TEXTURE1 patch count")
         for p in range(patches):
-            idx=struct.unpack_from("<h",tex,off+26+10*p)[0]
+            idx=struct.unpack_from("<h",tex,off+18+6*p)[0]
             if 0<=idx<len(names) and names[idx] in lumps:
                 result.append((name,names[idx]))
     return result
