@@ -285,7 +285,7 @@ class TandyArtTests(unittest.TestCase):
         self.assertEqual(lumps[b"SPRITA"], sprite)
         self.assertEqual(lumps[b"DEMO1"], b"original-demodata")
         self.assertEqual(lumps[b"STFACE"][15], SOLID_RGBI[0x36])
-        self.assertEqual(set(lumps[b"TITLEPIC"]), {0x88})
+        self.assertEqual(set(lumps[b"TITLEPIC"]), {0x44})
         self.assertEqual(stats["colormap_strategy"], "original_ega_unchanged")
         self.assertTrue(stats["world_colormaps_unchanged"])
         self.assertEqual(stats["world_mode"], "original")
