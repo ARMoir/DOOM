@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from prepare import (HEADER, ENTRY, RAW_SIZES, TANDY_RGBI,
                      nearest_rgbi, pack_tandy, quantize_raw_vga,
-                     wad_lumps)
+                     wad_lumps, is_colormap_lump, world_patch_names)
 
 
 def make_wad(parts):
@@ -145,6 +145,48 @@ class TandyArtTests(unittest.TestCase):
         self.assertEqual(lumps[b"DEMO1"], mapdata)
         self.assertEqual(lumps[b"COLORMAP"][:256], SOLID_RGBI)
         self.assertEqual(lumps[b"TESTPATC"][15], SOLID_RGBI[0x19])
+
+
+    def test_world_texture_and_sprite_samples_are_not_double_quantized(self):
+        from prepare import SOLID_RGBI
+        # A wall and a sprite with exactly the same pair of source colors
+        # as a HUD face must keep their EGA input byte, because the game
+        # first maps world textures through COLORMAP. UI is drawn raw.
+        def patch():
+            return (struct.pack("<hhhhI", 1, 5, 0, 0, 12) +
+                    bytes([0, 1, 0, 0x1e, 0, 255]))
+        pnames = struct.pack("<I8s", 1, b"WALLA\0\0\0")
+        cmap = bytes(range(256)) * 34
+        game = [
+            ("PNAMES", pnames), ("COLORMAP", cmap),
+            ("COLORMP1", cmap), ("WALLA", patch()),
+            ("S_START", b""), ("SPRITA", patch()),
+            ("S_END", b""), ("STFACE", patch()),
+        ]
+        ega = make_wad(game + [(k.decode(), bytes([0x8e]) * length)
+                               for k, length in RAW_SIZES.items()])
+        vga = make_wad([("PLAYPAL", palette())] +
+                       [(k.decode(), bytes([4]) * length)
+                        for k, length in RAW_SIZES.items()])
+        packed = pack_tandy(ega, vga)
+        _, converted = wad_lumps(packed)
+        self.assertEqual(converted[b"WALLA"], patch())
+        self.assertEqual(converted[b"SPRITA"], patch())
+        self.assertEqual(converted[b"STFACE"][15], SOLID_RGBI[0x1e])
+        self.assertEqual(converted[b"COLORMAP"][:256], SOLID_RGBI)
+        self.assertEqual(converted[b"COLORMP1"][:256], SOLID_RGBI)
+
+    def test_bad_patch_directory_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "PNAMES"):
+            world_patch_names({b"PNAMES": struct.pack("<I", 2) + b"ONE\0\0\0\0\0"},
+                              [])
+
+    def test_gamma_colormap_name_match_is_exact(self):
+        self.assertTrue(is_colormap_lump(b"COLORMAP"))
+        self.assertTrue(is_colormap_lump(b"COLORMP1"))
+        self.assertTrue(is_colormap_lump(b"COLORMP4"))
+        self.assertFalse(is_colormap_lump(b"COLORM0P"))
+        self.assertFalse(is_colormap_lump(b"COLORM"))
 
     def test_truncated_wad_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "Truncated"):

@@ -71,3 +71,9 @@ The flat sky constant is now a full 4-bit RGBI nibble pair.
 This should eliminate the checkerboard ceiling/floor and
 much of the garish vertical wall coloring seen on the EX.
 No additional CPU work is required at runtime.
+
+TANDY WALL TEXTURE CORRECTION:
+DOOMT16.WAD now retains original wall/sprite texture bytes for
+lighting table lookups instead of de-dithering both the input and
+the output. Gamma color tables and directly drawn HUD pixel art
+still receive an offline RGBI conversion. Replace DOOMT16.WAD.

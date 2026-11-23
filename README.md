@@ -157,3 +157,25 @@ detail for cleaner 160-color-position patterns on the Tandy's
 actual 16-color output. The physical photo remains the final test:
 DOSBox-X smoke tests verify program execution but cannot judge
 CRT color quality.
+
+
+## Tandy world-texture color pipeline correction
+
+The first de-dithering attempt (DOS Build #15) unintentionally flattened
+EGA wall and sprite **source bytes before lookup** and flattened the
+`COLORMAP` **output bytes too**. This double conversion can change
+the lookup index, producing excessive quantization and incorrect wall
+shading even though the status bar and static artwork look cleaner.
+
+The converter now uses the upstream `PNAMES` texture list and
+sprite namespace markers to **preserve original source bytes** for all
+world wall/sprite/weapon samples. Only the output of `COLORMAP`
+and gamma tables is converted to one solid RGBI pixel pair. UI patches
+that bypass the lighting lookup still receive their own offline pixel
+conversion. The exact WAD lump order, offsets, source dimensions, DOS
+overlay format, Tandy mode 08h framebuffer and PSG sound code remain
+unchanged. Runtime overhead is zero.
+
+This addresses a definite source-level color indexing inconsistency;
+photographs of the physical Tandy are still necessary to judge whether
+any other visual problems remain.

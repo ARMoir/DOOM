@@ -102,7 +102,7 @@ def quantize_raw_vga(raw, palette, width):
 
 
 
-# The EGA Doom8088 WAD's wall/sprite colors are two four-bit dither
+# The EGA Doom8088 WAD's lit wall/sprite colors are two four-bit dither
 # samples per byte. On EGA those are displayed as separate subpixels.
 # The Tandy 160x200 framebuffer cannot resolve that pattern well; at
 # 120 logical pixels wide it becomes a pronounced pink/green checker.
@@ -132,7 +132,7 @@ def solidify_colormap(data):
 
 
 def solidify_patch(data):
-    """Convert real DOOM patch posts, preserving headers and offsets.
+    """Convert UI patch posts, preserving headers and offsets.
 
     Only transform well-formed patch data. A patch starts with four
     signed shorts and width 32-bit column offsets, followed by
@@ -185,14 +185,58 @@ def solidify_patch(data):
 
 
 
+
+def world_patch_names(wad_lumps_by_name, ega_order):
+    """Identify patches used by lighting-mapped walls/sprites.
+
+    Wall texture names come from PNAMES, while sprites live between
+    S_START/S_END (or SS_START/SS_END) namespace markers. Those patches
+    must retain the source EGA color-pair byte: the runtime indexes the
+    COLORMAP table with that exact value before rendering its RGBI nibble.
+    Rewriting source pixels first applies the conversion twice and
+    produces incorrect wall shading.
+    """
+    world = set()
+    pnames = wad_lumps_by_name.get(b"PNAMES")
+    if pnames is not None:
+        if len(pnames) < 4:
+            raise ValueError("Truncated PNAMES")
+        count = struct.unpack_from("<I", pnames)[0]
+        if count > (len(pnames) - 4) // 8:
+            raise ValueError("Truncated PNAMES patch directory")
+        for index in range(count):
+            name = pnames[4 + index * 8:12 + index * 8].rstrip(b"\0")
+            if name:
+                world.add(name)
+
+    sprites = False
+    for name, _, size in ega_order:
+        key = name.rstrip(b"\0")
+        if key in (b"S_START", b"SS_START"):
+            sprites = True
+        elif key in (b"S_END", b"SS_END"):
+            sprites = False
+        elif sprites and size:
+            world.add(key)
+    return world
+
+
+def is_colormap_lump(name):
+    """The gamma variants are called COLORMP1..COLORMP4 in this port."""
+    return name == b"COLORMAP" or (
+        len(name) == 8 and name.startswith(b"COLORMP") and
+        name[-1] in b"0123456789"
+    )
+
 def pack_tandy(ega_wad, vga_wad):
     """Use EGA gameplay lumps, but source all raw artwork from clean VGA.
 
     Original lump numbering/order is preserved. Output raw sizes match
     the current 120px internal RGBI framebuffer (60 bytes per scanline).
     """
-    ega_order, _ = wad_lumps(ega_wad)
+    ega_order, ega_lumps = wad_lumps(ega_wad)
     _, vga_lumps = wad_lumps(vga_wad)
+    world_patches = world_patch_names(ega_lumps, ega_order)
     palette = vga_lumps.get(b"PLAYPAL")
     if palette is None or len(palette) < 256 * 3:
         raise ValueError("VGA WAD is missing its PLAYPAL RGB palette")
@@ -211,15 +255,17 @@ def pack_tandy(ega_wad, vga_wad):
             if len(data) != RAW_SIZES[key] // 4:
                 raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
-        elif key == b"COLORMAP":
-            # Rebuild the 34 lighting tables as 4bpp solid-color
-            # values: walls, skies, floors and sprite shades all
-            # lookup these entries in their existing 8086 paths.
+        elif is_colormap_lump(key):
+            # Lighting maps take ORIGINAL EGA texture byte as input,
+            # then produce one solid 4-bit Tandy color as output.
+            # Transform the gamma variants as well so F11 stays clean.
             data = solidify_colormap(data)
-        elif key not in (b"PLAYPAL", b"TEXTURE1", b"TEXTURE2", b"PNAMES"):
-            # Validate every patch's post structure; transforms its
-            # pixel samples only (weapons, enemies, faces, HUD, walls).
-            # Identical nibble pairs have no EGA checkerboard.
+        elif key not in world_patches and key not in (
+                b"PLAYPAL", b"TEXTURE1", b"TEXTURE2", b"PNAMES"):
+            # Only UI patches drawn DIRECTLY into the framebuffer need
+            # their pixel posts flattened. Do not alter any wall or
+            # sprite patch: that would change its COLORMAP lookup index
+            # and incorrectly quantize the source a second time.
             data = solidify_patch(data)
         entries.append(ENTRY.pack(len(result), len(data), name))
         result.extend(data)
