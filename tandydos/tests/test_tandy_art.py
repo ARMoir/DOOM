@@ -188,6 +188,66 @@ class TandyArtTests(unittest.TestCase):
         self.assertFalse(is_colormap_lump(b"COLORM0P"))
         self.assertFalse(is_colormap_lump(b"COLORM"))
 
+
+    def test_native_vga_light_table_tracks_source_color(self):
+        from prepare import (make_native_colormap, collect_vga_examples,
+                             rgb_native_ui_patch)
+        # Source byte 0x6c is misleading: the matching original VGA
+        # artwork actually contains solid deep red (palette index 4).
+        # EGA output is deliberately green. Mapping must follow VGA.
+        def post(index):
+            return struct.pack("<hhhhI", 1, 5, 0, 0, 12) + (
+                bytes([0, 1, 0, index, 0, 255]))
+        ega = {b"WALL": post(0x6c)}
+        vga = {b"WALL": post(4)}
+        hist, stats = collect_vga_examples(ega, vga, {b"WALL"})
+        self.assertEqual(stats["matched_pixels"], 1)
+        self.assertEqual(stats["source_codes"], 1)
+        egamap = bytearray([0x22] * (34 * 256))
+        vgamap = bytearray(bytes(range(256)) * 34)
+        vgamap[31 * 256 + 4] = 0  # 31 = darkest shade.
+        out = make_native_colormap(bytes(egamap), bytes(vgamap),
+                                   palette(), hist)
+        self.assertEqual(out[0x6c], 0x44)
+        self.assertEqual(out[31 * 256 + 0x6c], 0x00)
+        self.assertEqual(out[0x12], 0x22)  # Unobserved => EGA fallback
+
+    def test_vga_ui_patch_preserves_binary_layout(self):
+        from prepare import rgb_native_ui_patch
+        def post(index):
+            return struct.pack("<hhhhI", 1, 5, 0, 0, 12) + (
+                bytes([0, 1, 0, index, 0, 255]))
+        ega = post(0x2a)
+        vga = post(14)
+        native = rgb_native_ui_patch(ega, vga, palette())
+        self.assertEqual(native[:15], ega[:15])
+        self.assertEqual(native[15], 0xee)
+        self.assertEqual(native[16:], ega[16:])
+        self.assertIsNone(rgb_native_ui_patch(ega, b"invalid", palette()))
+
+    def test_native_rgb_pipeline_is_byte_aligned_for_every_shade(self):
+        from prepare import make_native_colormap
+        hist = [[0] * 256 for _ in range(256)]
+        hist[0x1e][9] = 5
+        pal = palette()
+        egamap = bytes(range(256)) * 34
+        vgamap = bytes(range(256)) * 34
+        out = make_native_colormap(egamap, vgamap, pal, hist)
+        self.assertEqual(len(out), len(egamap))
+        self.assertTrue(all(v >> 4 == (v & 15) for v in out))
+        self.assertEqual(out[0x1e], 0x99)
+
+    def test_gamma_variant_lifts_midtones_without_extra_runtime_bytes(self):
+        from prepare import gamma_rgb, make_native_colormap
+        self.assertEqual(gamma_rgb(0, 4), 0)
+        self.assertEqual(gamma_rgb(255, 4), 255)
+        self.assertGreater(gamma_rgb(120, 4), gamma_rgb(120, 0))
+        hist = [[0] * 256 for _ in range(256)]
+        hist[17][6] = 1
+        cmap = bytes(range(256)) * 34
+        out = make_native_colormap(cmap, cmap, palette(), hist, gamma=4)
+        self.assertEqual(len(out), 34 * 256)
+
     def test_truncated_wad_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "Truncated"):
             wad_lumps(b"IW")

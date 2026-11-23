@@ -179,3 +179,37 @@ unchanged. Runtime overhead is zero.
 This addresses a definite source-level color indexing inconsistency;
 photographs of the physical Tandy are still necessary to judge whether
 any other visual problems remain.
+
+
+## Native Tandy RGBI pipeline (FastDoom-inspired)
+
+FastDoom's EGA/CGA pipeline precomputes a closest-16-color lookup from
+the original 256-color palette and uses a packed output nibble pair.
+Doom8088, by contrast, ships EGA-dithered **source texture codes** that
+can only be used correctly if their original *source* byte stays intact.
+
+During the **build** (not on the XT), `tandydos/prepare.py` now:
+
+1. Identifies wall patch names from `PNAMES` and sprite patch namespaces.
+2. Matches their source pixels against the same named **VGA** wall/sprite
+   patches by actual (x, y) within their original DOOM patch columns.
+3. Collects the VGA palette colors represented by each 8-bit EGA source
+   code. When a source value maps to several VGA colors, it uses their
+   frequency-weighted average after applying the VGA light-level table.
+4. Generates each 34×256 **Tandy RGBI COLORMAP**, and the gamma variants,
+   by selecting the closest of 16 hardware colors per shade, packing
+   the result as one repeated RGBI nibble. Unmatched values use the
+   verified EGA pair-average fallback.
+5. Recolors directly drawn HUD/UI patches from matching VGA patch
+   coordinates, leaving EGA post headers/geometry unchanged. Incompatible
+   or absent VGA patches fall back to de-dithered EGA UI.
+6. Preserves the original EGA wall/sprite samples, WAD lump ordering and
+   the DOS renderer; no new runtime tables, memory allocations, or
+   per-pixel calculations are added on the Tandy.
+
+`RGBI.TXT` in each release records actual source pixel and
+patch match counts so that a missing VGA match is visible rather than
+silently assumed. For standalone verification, run
+`python -m unittest discover -s tandydos/tests -p 'test_*.py'`.
+This is a source-aware lighting conversion, **not** a FastDoom 386/486
+assembler transplant. Physical RGBI fidelity must be judged on the EX.

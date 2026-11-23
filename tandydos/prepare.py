@@ -228,7 +228,164 @@ def is_colormap_lump(name):
         name[-1] in b"0123456789"
     )
 
-def pack_tandy(ega_wad, vga_wad):
+
+def parse_patch_pixels(data):
+    """Return (width, height, {(x,y): (offset,index)}) for valid DOOM posts.
+
+    EGA and VGA source patches can have different post offsets, so match
+    pixels by original X/Y coordinates, never by the packed file offset.
+    """
+    if data is None or len(data) < 12:
+        return None
+    width, height, _, _ = struct.unpack_from("<hhhh", data)
+    if not (0 < width <= 320 and 0 < height <= 256):
+        return None
+    directory_end = 8 + 4 * width
+    if directory_end >= len(data):
+        return None
+
+    pixels = {}
+    for x in range(width):
+        pos = struct.unpack_from("<I", data, 8 + 4 * x)[0]
+        if pos < directory_end or pos >= len(data):
+            return None
+        terminated = False
+        for _ in range(257):
+            if pos >= len(data):
+                return None
+            top = data[pos]
+            if top == 255:
+                terminated = True
+                break
+            if pos + 4 > len(data):
+                return None
+            length = data[pos + 1]
+            end = pos + length + 4
+            if (not length or top >= height or
+                    top + length > height or end > len(data)):
+                return None
+            for y in range(length):
+                pixels[x, top + y] = (pos + 3 + y, data[pos + 3 + y])
+            pos = end
+        if not terminated:
+            return None
+    return width, height, pixels
+
+
+def collect_vga_examples(ega_lumps, vga_lumps, world_names):
+    """Learn what each EGA 2x4bpp source code means in the original VGA art.
+
+    Maps at identical texture coordinates, not between colormap output
+    bytes. This avoids the pre-quantization / double-conversion bug.
+    """
+    hist = [[0] * 256 for _ in range(256)]
+    matched_patches = 0
+    matched_pixels = 0
+    for name in sorted(world_names):
+        ega = parse_patch_pixels(ega_lumps.get(name))
+        vga = parse_patch_pixels(vga_lumps.get(name))
+        if ega is None or vga is None or ega[:2] != vga[:2]:
+            continue
+        ep = ega[2]
+        vp = vga[2]
+        overlap = len(ep.keys() & vp.keys())
+        if not ep or overlap * 4 < len(ep) * 3:
+            # Not an equivalent source picture; never map mismatched art.
+            continue
+        matched_patches += 1
+        for xy, (_offset, original_ega_byte) in ep.items():
+            source_vga = vp.get(xy)
+            if source_vga is not None:
+                hist[original_ega_byte][source_vga[1]] += 1
+                matched_pixels += 1
+    return hist, {"matched_patches": matched_patches,
+                  "matched_pixels": matched_pixels,
+                  "source_codes": sum(any(row) for row in hist)}
+
+
+def gamma_rgb(value, gamma):
+    """Small, precomputed brightness lift like a DOS gamma lookup.
+
+    Not a rendering operation on the Tandy. Gamma 0 is exact input.
+    """
+    if gamma <= 0 or value in (0, 255):
+        return value
+    # Integer-only and monotonic; gamma levels 1..4 increase midtones.
+    # Approximate each higher EGA COLORMP1..4 variant, never overexpose.
+    lift = (255 - value) * value * gamma
+    return min(255, value + (lift + 255 * 12) // (255 * 24))
+
+
+def make_native_colormap(ega_table, vga_table, vga_palette, histogram,
+                         gamma=0):
+    """Translate 34x256 VGA-colormap shades into one Tandy RGBI pixel.
+
+    FastDoom's nearest-color palette LUT idea, adapted to source colors
+    represented by Doom8088's two-EGA-color codes. The 256-way
+    histogram is built from identical VGA/EGA texture coordinates.
+    The table remains the same 34x256, byte-indexed data used by the
+    8086 wall/sprite inner loop. Unobserved source codes fall back to
+    the original EGA lighting output, avoiding invented colors.
+    """
+    if (len(ega_table) < 34 * 256 or len(ega_table) % 256 or
+            vga_table is None or len(vga_table) < 34 * 256 or
+            len(vga_palette) < 768):
+        return solidify_colormap(ega_table)
+    palette = [tuple(vga_palette[i * 3:i * 3 + 3]) for i in range(256)]
+    source = []
+    for code in range(256):
+        counts = histogram[code]
+        source.append([(i, amount) for i, amount in enumerate(counts)
+                       if amount])
+    out = bytearray(ega_table.translate(SOLID_RGBI))
+    for light in range(34):
+        base = light * 256
+        for code, examples in enumerate(source):
+            if not examples:
+                continue
+            total = red = green = blue = 0
+            for vga_index, samples in examples:
+                lookup = vga_table[base + vga_index]
+                r, g, b = palette[lookup]
+                total += samples
+                red += r * samples
+                green += g * samples
+                blue += b * samples
+            if not total:
+                continue
+            rgb = [int((value + total // 2) // total)
+                   for value in (red, green, blue)]
+            color = nearest_rgbi(*(gamma_rgb(value, gamma) for value in rgb))
+            out[base + code] = (color << 4) | color
+    return bytes(out)
+
+
+def rgb_native_ui_patch(ega_blob, vga_blob, vga_palette):
+    """Recolor UI posts using original VGA pixels, without altering EGA layout.
+
+    The UI paths bypass COLORMAP, so these pixel bytes must already be
+    packed repeated-nibble RGBI. If layouts differ, caller retains a
+    de-dithered EGA patch instead of copying incompatible binary data.
+    """
+    ega = parse_patch_pixels(ega_blob)
+    vga = parse_patch_pixels(vga_blob)
+    if ega is None or vga is None or ega[:2] != vga[:2]:
+        return None
+    ep = ega[2]
+    vp = vga[2]
+    if ep.keys() != vp.keys():
+        return None
+    result = bytearray(ega_blob)
+    pal = [tuple(vga_palette[i * 3:i * 3 + 3]) for i in range(256)]
+    for xy, (offset, _byte) in ep.items():
+        _voff, index = vp[xy]
+        color = nearest_rgbi(*pal[index])
+        result[offset] = (color << 4) | color
+    return bytes(result)
+
+
+
+def pack_tandy(ega_wad, vga_wad, stats=None):
     """Use EGA gameplay lumps, but source all raw artwork from clean VGA.
 
     Original lump numbering/order is preserved. Output raw sizes match
@@ -237,12 +394,16 @@ def pack_tandy(ega_wad, vga_wad):
     ega_order, ega_lumps = wad_lumps(ega_wad)
     _, vga_lumps = wad_lumps(vga_wad)
     world_patches = world_patch_names(ega_lumps, ega_order)
+    histogram, diagnostics = collect_vga_examples(
+        ega_lumps, vga_lumps, world_patches)
     palette = vga_lumps.get(b"PLAYPAL")
     if palette is None or len(palette) < 256 * 3:
         raise ValueError("VGA WAD is missing its PLAYPAL RGB palette")
     result = bytearray(HEADER.size)
     entries = []
     converted = set()
+    ui_vga_count = 0
+    vga_colormap = vga_lumps.get(b"COLORMAP")
     for name, offset, size in ega_order:
         key = name.rstrip(b"\0")
         data = ega_wad[offset:offset+size]
@@ -256,23 +417,34 @@ def pack_tandy(ega_wad, vga_wad):
                 raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
         elif is_colormap_lump(key):
-            # Lighting maps take ORIGINAL EGA texture byte as input,
-            # then produce one solid 4-bit Tandy color as output.
-            # Transform the gamma variants as well so F11 stays clean.
-            data = solidify_colormap(data)
+            # FastDoom-style palette search: a 34*256 lookup built from
+            # corresponding VGA/EGA texture pixels, for each light level.
+            # Input wall/sprite byte is kept unchanged in its source lump.
+            gamma = int(key[-1:]) if key.startswith(b"COLORMP") else 0
+            data = make_native_colormap(data, vga_colormap, palette,
+                                        histogram, gamma=gamma)
         elif key not in world_patches and key not in (
                 b"PLAYPAL", b"TEXTURE1", b"TEXTURE2", b"PNAMES"):
-            # Only UI patches drawn DIRECTLY into the framebuffer need
-            # their pixel posts flattened. Do not alter any wall or
-            # sprite patch: that would change its COLORMAP lookup index
-            # and incorrectly quantize the source a second time.
-            data = solidify_patch(data)
+            # UI and text are drawn directly, without a lighting lookup.
+            # Prefer original VGA source at the same patch coordinates.
+            native = rgb_native_ui_patch(data, vga_lumps.get(key), palette)
+            if native is not None:
+                data = native
+                ui_vga_count += 1
+            else:
+                data = solidify_patch(data)
         entries.append(ENTRY.pack(len(result), len(data), name))
         result.extend(data)
     if converted != RAW_SIZES.keys():
         raise ValueError("Missing raw pictures in the EGA Doom8088 WAD")
     HEADER.pack_into(result, 0, b"IWAD", len(entries), len(result))
     result.extend(b"".join(entries))
+    diagnostics["vga_ui_patches"] = ui_vga_count
+    diagnostics["colormap_strategy"] = (
+        "matched_vga_rgb" if diagnostics["source_codes"] and
+        vga_colormap is not None else "ega_fallback")
+    if stats is not None:
+        stats.update(diagnostics)
     return bytes(result)
 
 
@@ -311,8 +483,15 @@ def prepare(output, binaries, archives, modes):
             video, wad_name, exe_name, digest = MODES[mode]
             wad = load_wad(mode)
             if mode == "tandy":
+                stats = {}
                 wad_name, wad = "DOOMT16.WAD", pack_tandy(
-                    wad, load_wad("vga"))
+                    wad, load_wad("vga"), stats=stats)
+                print("Tandy RGBI offline pipeline:", stats, flush=True)
+                (stage / "RGBI.TXT").write_text(
+                    "Tandy RGBI WAD conversion\n" +
+                    "\n".join(str(k) + ": " + str(v)
+                              for k, v in sorted(stats.items())) + "\n",
+                    encoding="ascii")
             (stage / wad_name).write_bytes(wad)
             shutil.copyfile(binaries / exe_name, stage / (Path(exe_name).stem + ".OVL"))
             if mode == "tandy":

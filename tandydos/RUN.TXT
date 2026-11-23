@@ -77,3 +77,10 @@ DOOMT16.WAD now retains original wall/sprite texture bytes for
 lighting table lookups instead of de-dithering both the input and
 the output. Gamma color tables and directly drawn HUD pixel art
 still receive an offline RGBI conversion. Replace DOOMT16.WAD.
+
+NEW RGBI LIGHTING PIPELINE:
+The WAD now maps original EGA texture-byte codes to their original
+VGA source colors, reconstructs 34 Tandy 16-color lighting tables
+on the build machine, and keeps the wall/sprite lookup indices.
+Matching VGA HUD art is converted directly. No EX CPU overhead.
+See RGBI.TXT for matching coverage and fallback details.
