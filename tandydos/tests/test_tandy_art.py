@@ -143,7 +143,7 @@ class TandyArtTests(unittest.TestCase):
                          [b"COLORMAP", b"DEMO1", b"TESTPATC",
                           *RAW_SIZES.keys()])
         self.assertEqual(lumps[b"DEMO1"], mapdata)
-        self.assertEqual(lumps[b"COLORMAP"][:256], SOLID_RGBI)
+        self.assertEqual(lumps[b"COLORMAP"], cmap)
         self.assertEqual(lumps[b"TESTPATC"][15], SOLID_RGBI[0x19])
 
 
@@ -173,8 +173,8 @@ class TandyArtTests(unittest.TestCase):
         self.assertEqual(converted[b"WALLA"], patch())
         self.assertEqual(converted[b"SPRITA"], patch())
         self.assertEqual(converted[b"STFACE"][15], SOLID_RGBI[0x1e])
-        self.assertEqual(converted[b"COLORMAP"][:256], SOLID_RGBI)
-        self.assertEqual(converted[b"COLORMP1"][:256], SOLID_RGBI)
+        self.assertEqual(converted[b"COLORMAP"], cmap)
+        self.assertEqual(converted[b"COLORMP1"], cmap)
 
     def test_bad_patch_directory_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "PNAMES"):
@@ -247,6 +247,62 @@ class TandyArtTests(unittest.TestCase):
         cmap = bytes(range(256)) * 34
         out = make_native_colormap(cmap, cmap, palette(), hist, gamma=4)
         self.assertEqual(len(out), 34 * 256)
+
+
+    def test_default_wad_keeps_original_world_colors_and_better_hud(self):
+        """Physical Tandy regression: never re-flatten the world colors.
+
+        The title/HUD improvements are independent of the wall/sprite
+        light-table conversion. The 34*256 COLORMAP, gamma variant,
+        wall samples, and sprite samples must remain bit-identical.
+        """
+        from prepare import SOLID_RGBI
+        def patch(byte):
+            return struct.pack("<hhhhI", 1, 5, 0, 0, 12) + (
+                bytes([0, 1, 0, byte, 0, 255]))
+        cmap = bytes(range(256)) * 34
+        gamma = cmap[::-1]
+        wall = patch(0x1e)
+        sprite = patch(0x28)
+        hud = patch(0x36)
+        pnames = struct.pack("<I8s", 1, b"WALLA\0\0\0")
+        ega = make_wad([
+            ("PNAMES", pnames), ("COLORMAP", cmap),
+            ("COLORMP1", gamma), ("WALLA", wall),
+            ("S_START", b""), ("SPRITA", sprite), ("S_END", b""),
+            ("STFACE", hud), ("DEMO1", b"original-demodata"),
+        ] + [(k.decode(), bytes([0x8e]) * length)
+             for k, length in RAW_SIZES.items()])
+        vga = make_wad([("PLAYPAL", palette())] +
+                       [(k.decode(), bytes([4]) * length)
+                        for k, length in RAW_SIZES.items()])
+        stats = {}
+        packed = pack_tandy(ega, vga, stats=stats)
+        _order, lumps = wad_lumps(packed)
+        self.assertEqual(lumps[b"COLORMAP"], cmap)
+        self.assertEqual(lumps[b"COLORMP1"], gamma)
+        self.assertEqual(lumps[b"WALLA"], wall)
+        self.assertEqual(lumps[b"SPRITA"], sprite)
+        self.assertEqual(lumps[b"DEMO1"], b"original-demodata")
+        self.assertEqual(lumps[b"STFACE"][15], SOLID_RGBI[0x36])
+        self.assertEqual(set(lumps[b"TITLEPIC"]), {0x88})
+        self.assertEqual(stats["colormap_strategy"], "original_ega_unchanged")
+        self.assertTrue(stats["world_colormaps_unchanged"])
+        self.assertEqual(stats["world_mode"], "original")
+
+    def test_experimental_world_reconstruction_only_on_explicit_opt_in(self):
+        """Retain a controlled comparison path without shipping it by default."""
+        cmap = bytes([0x1e] * (34 * 256))
+        game = make_wad([("COLORMAP", cmap)] +
+                        [(k.decode(), bytes([0x8e]) * length)
+                         for k, length in RAW_SIZES.items()])
+        vga = make_wad([("PLAYPAL", palette()), ("COLORMAP", cmap)] +
+                       [(k.decode(), bytes([4]) * length)
+                        for k, length in RAW_SIZES.items()])
+        standard = pack_tandy(game, vga)
+        experimental = pack_tandy(game, vga, reconstruct_world=True)
+        self.assertEqual(wad_lumps(standard)[1][b"COLORMAP"], cmap)
+        self.assertNotEqual(wad_lumps(experimental)[1][b"COLORMAP"], cmap)
 
     def test_truncated_wad_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "Truncated"):

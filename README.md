@@ -244,3 +244,29 @@ absolute V20 performance. For hardware numbers compare `BENCH.BAT`
 on the physical EX. Any faster 8086 assembly or EMS paging is
 deferred until the existing C baseline is stable, because earlier
 experimental assembly paths timed out in DOSBox-X.
+
+
+## Stable Tandy world graphics: retain the successful HUD, reset world shading
+
+Physical Tandy 1000 EX screenshots of Builds #15–18 showed that
+aggressive off-line reinterpretation of source world color codes made
+walls into large orange/gray blocks. The newest release defaults to
+**bit-for-bit original Doom8088 EGA world `COLORMAP` and
+gamma table bytes**, while retaining our improved VGA-derived title,
+help, intermission, status-bar pictures, and individual HUD/UI patches.
+Wall and sprite patch source data also stay unchanged. The engine,
+native 16-color video output, PSG sound, automatic launcher, and
+Tandy-only 8086 math/cache changes remain intact.
+
+The earlier reconstructed VGA RGBI world-colormap algorithm is retained
+only as an opt-in **developer** function
+`pack_tandy(..., reconstruct_world=True)`; it is not enabled
+by the normal build or included as an alternate default WAD.
+This gives a clean baseline and prevents reintroducing collapsed
+texture shading while independently improving UI art.
+
+The original world tables can still look dithered on a real Tandy;
+this change is about **restoring recognizable textures**, not claiming
+the final perfect RGBI graphics pipeline. Our future work will need
+a different, more contrast-preserving world LUT and physical CRT
+A/B testing before replacing this baseline.

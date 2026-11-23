@@ -91,3 +91,11 @@ zero-numerator reciprocal division; the 16KB overlapping-wall
 column cache has a proper valid bitmap, clean compose scratch,
 and a 128-byte height guard. VGA/CGA builds remain unmodified.
 BENCH.BAT measures your physical Tandy; DOSBox-X is not 7MHz FPS.
+
+STABLE TANDY GAMEPLAY COLORS:
+This release keeps the title screen and HUD RGBI improvements,
+but restores original Doom8088 world COLORMAP lighting values,
+all gamma tables, and original wall/sprite source texture bytes.
+Do not mix older DOOMT16.WAD files with this release.
+The previous experimental VGA-derived world color table made
+textures overly flat; it is no longer used by normal packaging.

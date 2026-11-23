@@ -385,8 +385,14 @@ def rgb_native_ui_patch(ega_blob, vga_blob, vga_palette):
 
 
 
-def pack_tandy(ega_wad, vga_wad, stats=None):
-    """Use EGA gameplay lumps, but source all raw artwork from clean VGA.
+def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False):
+    """Preserve source EGA gameplay textures, recolor only static and HUD art.
+
+    The experimental VGA RGBI reconstruction is deliberately opt-in.
+    Physical Tandy gameplay tests showed its averaged world COLORMAP
+    discarded too much texture contrast, despite successful DOS tests.
+    The default must leave ALL source world colormaps untouched.
+    
 
     Original lump numbering/order is preserved. Output raw sizes match
     the current 120px internal RGBI framebuffer (60 bytes per scanline).
@@ -394,8 +400,13 @@ def pack_tandy(ega_wad, vga_wad, stats=None):
     ega_order, ega_lumps = wad_lumps(ega_wad)
     _, vga_lumps = wad_lumps(vga_wad)
     world_patches = world_patch_names(ega_lumps, ega_order)
-    histogram, diagnostics = collect_vga_examples(
-        ega_lumps, vga_lumps, world_patches)
+    if reconstruct_world:
+        histogram, diagnostics = collect_vga_examples(
+            ega_lumps, vga_lumps, world_patches)
+    else:
+        histogram = None
+        diagnostics = {"matched_patches": 0, "matched_pixels": 0,
+                       "source_codes": 0}
     palette = vga_lumps.get(b"PLAYPAL")
     if palette is None or len(palette) < 256 * 3:
         raise ValueError("VGA WAD is missing its PLAYPAL RGB palette")
@@ -417,12 +428,14 @@ def pack_tandy(ega_wad, vga_wad, stats=None):
                 raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
         elif is_colormap_lump(key):
-            # FastDoom-style palette search: a 34*256 lookup built from
-            # corresponding VGA/EGA texture pixels, for each light level.
-            # Input wall/sprite byte is kept unchanged in its source lump.
-            gamma = int(key[-1:]) if key.startswith(b"COLORMP") else 0
-            data = make_native_colormap(data, vga_colormap, palette,
-                                        histogram, gamma=gamma)
+            # By default keep the complete original EGA lighting lookup
+            # byte-for-byte. Our Tandy screenshot proves that reducing each
+            # 8-bit dithered texture code to one RGBI nibble loses detail.
+            # Optional experimental conversion stays out of releases.
+            if reconstruct_world:
+                gamma = int(key[-1:]) if key.startswith(b"COLORMP") else 0
+                data = make_native_colormap(data, vga_colormap, palette,
+                                            histogram, gamma=gamma)
         elif key not in world_patches and key not in (
                 b"PLAYPAL", b"TEXTURE1", b"TEXTURE2", b"PNAMES"):
             # UI and text are drawn directly, without a lighting lookup.
@@ -441,8 +454,12 @@ def pack_tandy(ega_wad, vga_wad, stats=None):
     result.extend(b"".join(entries))
     diagnostics["vga_ui_patches"] = ui_vga_count
     diagnostics["colormap_strategy"] = (
-        "matched_vga_rgb" if diagnostics["source_codes"] and
-        vga_colormap is not None else "ega_fallback")
+        "experimental_vga_rgb" if reconstruct_world and
+        diagnostics["source_codes"] and vga_colormap is not None
+        else "original_ega_unchanged")
+    diagnostics["world_mode"] = (
+        "experimental" if reconstruct_world else "original")
+    diagnostics["world_colormaps_unchanged"] = not reconstruct_world
     if stats is not None:
         stats.update(diagnostics)
     return bytes(result)
