@@ -9,6 +9,7 @@ import struct
 import tempfile
 from urllib.request import urlopen
 from zipfile import ZipFile
+from clean_textures import make_clean_patches
 
 PORT = Path(__file__).resolve().parent
 TAG = "v20260304"
@@ -385,7 +386,7 @@ def rgb_native_ui_patch(ega_blob, vga_blob, vga_palette):
 
 
 
-def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False):
+def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False, clean_world=False):
     """Preserve source EGA gameplay textures, recolor only static and HUD art.
 
     The experimental VGA RGBI reconstruction is deliberately opt-in.
@@ -400,6 +401,7 @@ def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False):
     ega_order, ega_lumps = wad_lumps(ega_wad)
     _, vga_lumps = wad_lumps(vga_wad)
     world_patches = world_patch_names(ega_lumps, ega_order)
+    cleaned, clean_report = make_clean_patches(ega_lumps, parse_patch_pixels) if clean_world else ({}, [])
     if reconstruct_world:
         histogram, diagnostics = collect_vga_examples(
             ega_lumps, vga_lumps, world_patches)
@@ -427,6 +429,8 @@ def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False):
             if len(data) != RAW_SIZES[key] // 4:
                 raise ValueError("Incorrect packed Tandy graphic " + repr(key))
             converted.add(key)
+        elif key in cleaned:
+            data = cleaned[key]
         elif is_colormap_lump(key):
             # By default keep the complete original EGA lighting lookup
             # byte-for-byte. Our Tandy screenshot proves that reducing each
@@ -453,6 +457,10 @@ def pack_tandy(ega_wad, vga_wad, stats=None, reconstruct_world=False):
     HEADER.pack_into(result, 0, b"IWAD", len(entries), len(result))
     result.extend(b"".join(entries))
     diagnostics["vga_ui_patches"] = ui_vga_count
+    diagnostics["texture_profile"] = "clean" if clean_world else "classic"
+    diagnostics["clean_patches"] = len(clean_report)
+    diagnostics["clean_changed_pixels"] = sum(row[3] for row in clean_report)
+    diagnostics["clean_patch_details"] = "; ".join("%s:%s:%s:%d"%r for r in clean_report)
     diagnostics["colormap_strategy"] = (
         "experimental_vga_rgb" if reconstruct_world and
         diagnostics["source_codes"] and vga_colormap is not None
@@ -504,6 +512,11 @@ def prepare(output, binaries, archives, modes):
                 wad_name, wad = "DOOMT16.WAD", pack_tandy(
                     wad, load_wad("vga"), stats=stats)
                 print("Tandy RGBI offline pipeline:", stats, flush=True)
+                clean_stats = {}
+                clean_wad = pack_tandy(wad, load_wad("vga"), stats=clean_stats, clean_world=True)
+                (stage / "DOOMTC.WAD").write_bytes(clean_wad)
+                print("Tandy Clean experiment:", clean_stats, flush=True)
+                (stage / "CLEAN.TXT").write_text("\n".join("%s: %s"%(k,v) for k,v in sorted(clean_stats.items())) + "\n", encoding="ascii")
                 (stage / "RGBI.TXT").write_text(
                     "Tandy RGBI WAD conversion\n" +
                     "\n".join(str(k) + ": " + str(v)

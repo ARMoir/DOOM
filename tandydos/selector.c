@@ -115,6 +115,7 @@ static void help(void)
     puts("  -auto          Enable automatic detection");
     puts("  -detect        Report detected mode and exit");
     puts("  -sound MODE    auto / tandy / pc (independent of video)");
+    puts("  -textures MODE classic / clean (Tandy only)");
     puts("  -nomusic       Sound effects only");
     puts("  -nosfx         Music only when Tandy PSG is present");
     puts("  -nosound       Disable music and effects");
@@ -129,7 +130,7 @@ int main(int argc, char **argv)
     enum video_mode detected, selected, parsed;
     const char *overlay, *wad;
     const char *launch_args[MAX_ARGS + 1];
-    int i, count = 1, detect_only = 0;
+    int i, count = 1, detect_only = 0, clean = 0;
     FILE *fp;
 
     for (i = 1; i < argc; ++i) {
@@ -160,6 +161,16 @@ int main(int argc, char **argv)
             override = parse_mode(arg + 1);
             continue;
         }
+        if (same(arg, "-textures")) {
+            if (++i >= argc || (!same(argv[i],"classic") && !same(argv[i],"clean"))) {
+                fputs("Use -textures classic or clean.\n", stderr); return 2;
+            }
+            if (count + 2 >= MAX_ARGS) return 2;
+            clean = same(argv[i], "clean");
+            launch_args[count++] = "-textures";
+            launch_args[count++] = argv[i];
+            continue;
+        }
         if (count >= MAX_ARGS) {
             fputs("Too many DOOM command-line arguments.\n", stderr);
             return 2;
@@ -176,8 +187,11 @@ int main(int argc, char **argv)
             printf("Override: %s\n", mode_name(selected));
         return 0;
     }
+    if (clean && selected != VIDEO_TANDY && selected != VIDEO_TANDY_HI) {
+        fputs("-textures clean requires Tandy graphics.\n",stderr); return 2;
+    }
     overlay = overlay_for(selected);
-    wad = wad_for(selected);
+    wad = clean ? "DOOMTC.WAD" : wad_for(selected);
     fp = fopen(overlay, "rb");
     if (!fp) {
         fprintf(stderr, "Missing %s in current directory.\n", overlay);
@@ -194,6 +208,8 @@ int main(int argc, char **argv)
     launch_args[count] = 0;
     printf("Video: %s%s\n", mode_name(selected),
            override == VIDEO_AUTO ? " (auto)" : " (forced)");
+    if (selected == VIDEO_TANDY || selected == VIDEO_TANDY_HI)
+        printf("Textures: %s\n", clean ? "clean" : "classic");
     fflush(stdout);
     /* DOS MZ loader will recognize the executable header inside .OVL. */
     execv(overlay, launch_args);

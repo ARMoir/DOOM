@@ -270,3 +270,8 @@ this change is about **restoring recognizable textures**, not claiming
 the final perfect RGBI graphics pipeline. Our future work will need
 a different, more contrast-preserving world LUT and physical CRT
 A/B testing before replacing this baseline.
+
+
+## Tandy Clean: optional original-art wall experiment
+
+Classic mode (`DOOM -tandyhi -textures classic`) retains the Build #20 world textures and original EGA lighting tables. **Clean** mode (`DOOM -tandyhi -textures clean`) loads the separate `DOOMTC.WAD`. This offline-only experiment picks five common wall-texture families through `TEXTURE1` and `PNAMES` and suppresses isolated pixels surrounded by at least three matching neighbors, keeping prominent edges and all existing color codes/lighting. Actual texture/patch names and changed-pixel counts are in `CLEAN.TXT`. It does not contain any Wolfenstein art. Both modes use the same improved title/HUD, fullscreen display and PSG. **Classic is always the default**, and neither mode needs more runtime memory or CPU work.

@@ -99,3 +99,10 @@ all gamma tables, and original wall/sprite source texture bytes.
 Do not mix older DOOMT16.WAD files with this release.
 The previous experimental VGA-derived world color table made
 textures overly flat; it is no longer used by normal packaging.
+
+TEXTURES (TANDY ONLY):
+DOOM -tandyhi -textures classic   Original world texture baseline
+DOOM -tandyhi -textures clean     Conservative wall cleanup test
+DOOM -tandy -textures clean       Fast rendering of clean textures
+DOOMT16.WAD is Classic; DOOMTC.WAD is Clean; keep both files.
+See CLEAN.TXT for actual changed texture names and counts.

@@ -174,12 +174,25 @@ typedef struct
 
 void W_Init(void)
 {
-	printf("\tadding " WAD_FILE "\n");
+    const char *filename = WAD_FILE;
+#if defined VIDEO_MODE_TANDY
+    extern int myargc;
+    extern char **myargv;
+    int i;
+    for (i=1; i+1<myargc; ++i) {
+        if (stricmp(myargv[i], "-textures") == 0) {
+            if (stricmp(myargv[i+1],"clean") == 0) filename = "DOOMTC.WAD";
+            else if (stricmp(myargv[i+1],"classic") != 0) I_Error("Unknown texture mode");
+            break;
+        }
+    }
+#endif
+	printf("\tadding %s\n", filename);
 	printf("\tshareware version.\n");
 
-	fileWAD = fopen(WAD_FILE, "rb");
+	fileWAD = fopen(filename, "rb");
 	if (fileWAD == NULL)
-		I_Error("Can't open " WAD_FILE ".");
+		I_Error("Can't open %s.", filename);
 
 	boolean xms = W_LoadWADIntoXMS();
 	readfunc = xms ? Z_MoveExtendedMemoryToConventionalMemory : W_ReadDataFromFile;
