@@ -84,3 +84,10 @@ VGA source colors, reconstructs 34 Tandy 16-color lighting tables
 on the build machine, and keeps the wall/sprite lookup indices.
 Matching VGA HUD art is converted directly. No EX CPU overhead.
 See RGBI.TXT for matching coverage and fallback details.
+
+REALDOOM-INSPIRED 8086 OPTIMIZATIONS:
+The Tandy executables now shortcut integral 16.16 multiplies and
+zero-numerator reciprocal division; the 16KB overlapping-wall
+column cache has a proper valid bitmap, clean compose scratch,
+and a 128-byte height guard. VGA/CGA builds remain unmodified.
+BENCH.BAT measures your physical Tandy; DOSBox-X is not 7MHz FPS.

@@ -554,7 +554,15 @@ fixed_t CONSTFUNC FixedMul(fixed_t a, fixed_t b)
 		uint32_t ll = (uint32_t) alw * blw;
 		 int32_t hl = ( int32_t) ahw * blw;
 		return (ll >> FRACBITS) + hl;
-	} else if (alw == 0) {
+	}
+#if defined TANDY_XT_MATH_CACHE
+	else if (blw == 0) {
+		// b is an integer in 16.16: (a * (bhw << 16)) >> 16
+		// is exactly a * bhw modulo 2^32. Skip two word products.
+		return a * bhw;
+	}
+#endif
+	else if (alw == 0) {
 		//return ahw * b;
 		 int32_t hl = ( int32_t) ahw * blw;
 		 int32_t hh = ( int32_t) ahw * bhw;
@@ -652,6 +660,11 @@ inline
 #endif
 fixed_t CONSTFUNC FixedApproxDiv(fixed_t a, fixed_t b)
 {
+#if defined TANDY_XT_MATH_CACHE
+	// Avoid the expensive 32/16 reciprocal divide for a zero slope.
+	if (a == 0)
+		return 0;
+#endif
 	if (b <= 0xffffu)
 		return FixedMul3232(a, FixedReciprocalSmall(b));
 	else
@@ -1798,6 +1811,17 @@ static uint16_t CACHE_ENTRY(int16_t column, int16_t texture)
 
 static byte __far columnCache[MAX_CACHE_ENTRIES*128];
 static uint16_t columnCacheEntries[MAX_CACHE_ENTRIES];
+#if defined TANDY_XT_MATH_CACHE
+// RealDOOM uses a texture working-set cache and MRU/LRU page tags.
+// Our EX has no EMS backfill: preserve the existing 16 KiB column data,
+// but add 16 bytes of validity bits to distinguish an empty cache slot
+// from the legal texture=0, column=0 key. Never mistake 0 for 'empty'.
+static uint8_t columnCacheValid[MAX_CACHE_ENTRIES / 8];
+#define XT_CACHE_HAS(i) \
+    (columnCacheValid[(i) >> 3] & (uint8_t)(1u << ((i) & 7u)))
+#define XT_CACHE_SET(i) \
+    (columnCacheValid[(i) >> 3] |= (uint8_t)(1u << ((i) & 7u)))
+#endif
 
 static uint16_t FindColumnCacheItem(int16_t texture, int16_t column)
 {
@@ -1808,7 +1832,11 @@ static uint16_t FindColumnCacheItem(int16_t texture, int16_t column)
 
 	for (int16_t i = 0; i < MAX_CACHE_TRIES; i++)
 	{
+#if defined TANDY_XT_MATH_CACHE
+		if (!XT_CACHE_HAS(key) || columnCacheEntries[key] == cx)
+#else
 		if (columnCacheEntries[key] == 0 || columnCacheEntries[key] == cx)
+#endif
 			return key;
 
 		key += 119;
@@ -1827,6 +1855,13 @@ static const byte __far* R_ComposeColumn(const int16_t texture, const texture_t 
     const int16_t xc = (texcolumn & 0xfffc) & tex->widthmask;
 #endif
 
+#if defined TANDY_XT_MATH_CACHE
+    // The resident composed-column slot is exactly 128 bytes.
+    // Reject unexpected tall columns rather than overwriting adjacent
+    // cache slots. The normal 8088 shareware textures are <=128 tall.
+    if (tex->height <= 0 || tex->height > 128 || tex->patchcount == 0)
+        return NULL;
+#endif
     uint16_t cachekey = FindColumnCacheItem(texture, xc);
 
     byte __far* colcache = &columnCache[cachekey*128];
@@ -1834,10 +1869,20 @@ static const byte __far* R_ComposeColumn(const int16_t texture, const texture_t 
 
     //total++;
 
+#if defined TANDY_XT_MATH_CACHE
+    if (!XT_CACHE_HAS(cachekey) || cacheEntry != CACHE_ENTRY(xc, texture))
+#else
     if (cacheEntry != CACHE_ENTRY(xc, texture))
+#endif
     {
         //misses++;
         static byte tmpCache[128];
+#if defined TANDY_XT_MATH_CACHE
+        // A partly transparent composite does not cover every texel.
+        // Old source reused stale pixels from the previous column,
+        // making colored bands appear along patched wall seams.
+        _fmemset(tmpCache, 0, sizeof(tmpCache));
+#endif
 
         uint8_t i = 0;
         uint8_t patchcount = tex->patchcount;
@@ -1870,6 +1915,9 @@ static const byte __far* R_ComposeColumn(const int16_t texture, const texture_t 
         _fmemcpy(colcache, tmpCache, (tex->height + 3) & ~3);
 
         columnCacheEntries[cachekey] = CACHE_ENTRY(xc, texture);
+#if defined TANDY_XT_MATH_CACHE
+        XT_CACHE_SET(cachekey);
+#endif
     }
 
     return colcache;

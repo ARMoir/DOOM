@@ -213,3 +213,34 @@ silently assumed. For standalone verification, run
 `python -m unittest discover -s tandydos/tests -p 'test_*.py'`.
 This is a source-aware lighting conversion, **not** a FastDoom 386/486
 assembler transplant. Physical RGBI fidelity must be judged on the EX.
+
+
+## RealDOOM 8086 math and texture-cache adaptation
+
+The [RealDOOM](https://github.com/sqpat/RealDOOM) 16-bit port contains
+hand-written 8086 multiply/divide routines and an EMS-backed, tiered
+texture-cache working set. Our V20 Tandy EX DOS build already uses
+split-word 16-bit products in `FixedMul` and
+`FixedMul3216`; RealDOOM's full EMS paging and
+self-modifying renderer cannot be dropped into a 640 KB non-EMS Tandy.
+
+The **Tandy-only** `TANDY_XT_MATH_CACHE` build switch adds a
+precise fast path when a 16.16 operand is an integer, and returns
+immediately for zero-numerator reciprocal division. These cases
+avoid redundant word multiplication/division while preserving the
+existing fixed-point results. No new assembly is enabled.
+
+The working-set cache continues using its **existing 128 resident
+128-byte column slots = 16 KiB**. Borrowing RealDOOM's explicit
+validity principle, a 16-byte tag bitmap now distinguishes empty
+slots from a legitimate texture 0 / column 0, and partially covered
+composite columns start with a cleared 128-byte scratch buffer.
+Bounds checks prevent oversized composite columns from spilling
+into adjacent slots. The tag bits and scratch clear affect only
+Tandy builds; CGA/VGA remain as regression controls.
+
+The emulator's 96-tic demo validates launch and gameplay, not
+absolute V20 performance. For hardware numbers compare `BENCH.BAT`
+on the physical EX. Any faster 8086 assembly or EMS paging is
+deferred until the existing C baseline is stable, because earlier
+experimental assembly paths timed out in DOSBox-X.

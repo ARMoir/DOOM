@@ -11,7 +11,9 @@ PORT = Path(__file__).resolve().parent
 ENGINE = PORT / "engine"
 MODES = {
     "tandy": ("DOOMTGA", "i_vcga", ["VIDEO_MODE_TANDY", "NR_OF_COLORS=16", "VIEWWINDOWWIDTH=30",
-                                     "FLAT_NUKAGE1_COLOR=32", "FLAT_SKY_COLOR=119"]),
+                                     "FLAT_NUKAGE1_COLOR=32", "FLAT_SKY_COLOR=119",
+                                          "TANDY_XT_MATH_CACHE",
+                                     "TANDY_XT_MATH_CACHE"]),
     "tandy-full": ("DOOMTGH", "i_vcga", ["VIDEO_MODE_TANDY", "NR_OF_COLORS=16",
                                           "FLAT_NUKAGE1_COLOR=32", "FLAT_SKY_COLOR=119"]),
     "cga": ("DOOMCGA", "i_vcga", ["VIDEO_MODE_CGA", "NR_OF_COLORS=4", "VIEWWINDOWWIDTH=30",
