@@ -144,6 +144,118 @@ def draw_armor(x, y, blue=False):
     return body
 
 
+
+def draw_pistol(x, y, frame="A"):
+    """First-person chunky UAC pistol: readable muzzle, slide and gloved hand.
+
+    Large silhouette uses only a handful of solid Tandy RGBI colors;
+    no tiny noise or 2-color stipple. B/C firing frames have a short
+    distinct recoil, but original DOOM muzzle-flash sprite stays intact.
+    """
+    y = y - (3 if frame in ("B", "C") else 0)
+    if y < 15 or y >= 64:
+        return None
+
+    # Foreground glove wraps the grip on the bottom right.
+    if 49 <= y and 40 <= x < 60:
+        if x >= 57 or y == 49:
+            return 0
+        if x <= 45 and y < 58:
+            return 6
+        return 8 if y > 59 else 6
+    if 53 <= y and 6 <= x < 25:
+        if x < 9 or y == 53:
+            return 0
+        return 6 if y < 60 else 8
+
+    # Grip and receiver: wide enough to read when scaled down.
+    if 46 <= y and 24 <= x < 44:
+        if x in (24, 43) or y == 46:
+            return 0
+        if x in (27, 28, 39) or y in (51, 60):
+            return 8
+        if x >= 36:
+            return 6
+        return 7 if y < 52 else 6
+    if 38 <= y < 52 and 20 <= x < 48:
+        if y in (38, 51) or x in (20, 47):
+            return 0
+        if 42 <= y < 46 and 27 <= x < 42:
+            return 15 if x < 34 else 8
+        if y == 40 and 22 <= x < 45:
+            return 15
+        return 8 if x > 41 else 7
+
+    # Broad slide with dark muzzle & two stark highlight edges.
+    if 27 <= y < 41 and 22 <= x < 45:
+        if x in (22, 44) or y in (27, 40):
+            return 0
+        if y == 29 or x in (25, 26):
+            return 15
+        if 29 <= x < 37 and 32 <= y < 38:
+            return 8
+        return 7
+    if 17 <= y < 29 and 28 <= x < 39:
+        if x in (28, 38) or y == 17:
+            return 0
+        if y < 22 and 31 <= x <= 35:
+            return 0  # unmistakable dark muzzle opening
+        if x == 30 or y == 24:
+            return 15
+        return 8
+    return None
+
+
+def draw_shotgun(x, y, frame="A"):
+    """Bolder Doom shotgun: squared barrel, pump, walnut grip and gloves."""
+    # B is recoil, C/D are the pump frames; silhouette stays recognizable.
+    y = y - (3 if frame == "B" else 0)
+    pump = 3 if frame in ("C", "D") else 0
+    if y < 10 or y >= 64:
+        return None
+    if y >= 51 and 5 <= x < 25:
+        if x in (5, 24) or y == 51:
+            return 0
+        return 6 if y < 60 else 8
+    if y >= 51 and 40 <= x < 59:
+        if x in (40, 58) or y == 51:
+            return 0
+        return 6 if y < 59 else 8
+
+    # Stock / central receiver at the bottom.
+    if 43 <= y and 20 <= x < 46:
+        if x in (20, 45) or y == 43:
+            return 0
+        if y < 48:
+            return 15 if x in (24,25) else 8
+        if 26 <= x < 39:
+            return 6 if (y // 5) % 2 == 0 else 8
+        return 7
+
+    # Broad wooden pump: animated forearm slides during reload.
+    if 33 + pump <= y < 49 + pump and 22 <= x < 44:
+        if x in (22, 43) or y in (33 + pump, 48 + pump):
+            return 0
+        if y in (36 + pump, 40 + pump, 44 + pump):
+            return 14
+        return 6
+
+    # Strong front-facing metal barrel and muzzle.
+    if 14 <= y < 42 and 25 <= x < 40:
+        if x in (25, 39) or y == 14:
+            return 0
+        if y < 22:
+            if 30 <= x <= 35 and y <= 20:
+                return 0
+            return 15 if x in (27, 37) else 8
+        if x in (27, 28) or y == 25:
+            return 15
+        if x in (37, 38) or y in (32, 39):
+            return 0
+        return 7
+    return None
+
+
 def raster_patch(original, pixel_func, source, parse_patch_pixels,
                  preserve_coverage=False):
     """Write valid DOOM column posts, keeping dimensions and sprite anchor.
@@ -188,7 +300,7 @@ def raster_patch(original, pixel_func, source, parse_patch_pixels,
 
 def build_tandy_art_wad(classic_wad, wad_lumps, parse_patch_pixels,
                         header, entry):
-    """Replace precisely two world patches and pickup sprite families.
+    """Replace two world patches, pickup sprites and first-person weapons.
 
     No new texture names, sprite names, maps, colormaps, HUD, title or
     gameplay code. Output stays an IWAD with identical lump directory.
@@ -255,6 +367,32 @@ def build_tandy_art_wad(classic_wad, wad_lumps, parse_patch_pixels,
             changes[name] = raster_patch(lumps[name], artist, source,
                                          parse_patch_pixels)
         details[label] = ",".join(n.decode("ascii","replace") for n in matched)
+
+    # View weapons are separate from world pickup weapons. They use
+    # PISG and SHTG four-letter sprite IDs in the original S_START
+    # namespace. Replace ALL animation frames, not only their A frames.
+    # Preserve original patch offset/anchor/dimensions for psprite
+    # positioning; preserve PISF/SHTF muzzle flashes for compatibility.
+    weapons = {
+        "pistol": (b"PISG", draw_pistol),
+        "shotgun": (b"SHTG", draw_shotgun),
+    }
+    for label, (prefix, painter) in weapons.items():
+        matched = sorted(name for name in sprite_names
+                         if name.startswith(prefix) and
+                         parse_patch_pixels(lumps.get(name)) is not None)
+        if not matched:
+            raise ValueError("Art pack missing view weapon sprite: " + label)
+        for name in matched:
+            frame = chr(name[4]) if len(name) > 4 else "A"
+            # Binding default args matters: the selected painter/frame
+            # must be stable over all columns of this one sprite.
+            def weapon_pixel(x, y, painter=painter, frame=frame):
+                return painter(x, y, frame)
+            changes[name] = raster_patch(lumps[name], weapon_pixel,
+                                         source, parse_patch_pixels)
+        details[label + " frames"] = ",".join(
+            n.decode("ascii", "replace") for n in matched)
 
     result = bytearray(header.size)
     directory = []

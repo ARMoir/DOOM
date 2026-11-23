@@ -332,3 +332,24 @@ This is original artwork influenced by Wolfenstein's clear shapes and
 DOOM's industrial look, **not a redistribution of Wolfenstein artwork**.
 Classic remains the default. On 7 MHz hardware the art conversion has
 zero runtime filtering cost and identical game mechanics.
+
+
+### New Tandy first-person weapons (Art profile)
+
+**Build #25** extends the optional original-art WAD to redraw all
+first-person **PISG pistol** and **SHTG shotgun** sprite animation
+frames from scratch: bold dark muzzle, bright steel edges, clean
+slide/receiver, and chunky brown-gloved hands. Separate firing/recoil
+frames preserve original DOOM animation timing. The existing PISF/SHTF
+muzzle flashes are left intact. The generator keeps original patch
+dimensions and x/y anchors, so weapon raise/lower and centering work
+without any engine changes. It uses the existing EGA COLORMAP to
+choose valid pre-existing color codes for RGBI output; no new runtime
+filters or extra CPU work on the 7 MHz V20.
+
+Only `DOOMTA.WAD` changes: Classic and Clean, world
+textures, the title, HUD and game logic stay the same. Run
+`DOOM -tandy -textures art` to see the new pistol at
+startup, and use the usual shotgun pickup or cheat to examine its
+animation. The tests validate all generated DOOM patch posts and
+that the underlying sprite anchors stay identical.

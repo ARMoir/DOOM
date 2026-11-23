@@ -123,3 +123,11 @@ DOOM -tandyhi -textures classic  Original-world baseline.
 DOOM -tandyhi -textures clean    Previous speckle-removal experiment.
 DOOMTA.WAD is the original-art WAD. ART.TXT lists replaced patches.
 No original Wolfenstein artwork is redistributed.
+
+TANDY ART WEAPON UPGRADE:
+The optional DOOMTA.WAD now includes original chunky low-resolution
+first-person PISTOL and SHOTGUN sprite frames (including firing/recoil).
+The pistol is visible immediately at E1M1 startup with:
+  DOOM -tandy -textures art
+Weapon animation timing, anchor positions and muzzle flashes are
+unchanged. Original Classic and Clean texture WADs remain available.

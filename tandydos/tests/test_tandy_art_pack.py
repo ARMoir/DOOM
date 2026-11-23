@@ -6,7 +6,8 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from prepare import HEADER, ENTRY, wad_lumps, parse_patch_pixels
 from tandy_art import (raster_patch, source_codes, draw_medkit, draw_armor,
-                       draw_green_wall, draw_exit_door, build_tandy_art_wad)
+                       draw_green_wall, draw_exit_door, draw_pistol,
+                       draw_shotgun, build_tandy_art_wad)
 
 def patch(w=24,h=24,value=0x22):
     out=bytearray(struct.pack("<hhhh",w,h,0,0)+b"\0"*(w*4))
@@ -42,6 +43,42 @@ class TestArt(unittest.TestCase):
         self.assertIsNone(draw_medkit(0,0))
         self.assertNotEqual(draw_armor(20,30,False),draw_armor(20,30,True))
         self.assertIsNone(draw_armor(0,0))
+    def test_first_person_weapon_shape_is_bold(self):
+        for painter in (draw_pistol, draw_shotgun):
+            pix = {(x,y): painter(x,y,"A")
+                   for x in range(64) for y in range(64)}
+            visible = {c for c in pix.values() if c is not None}
+            self.assertGreaterEqual(len(visible), 4)
+            self.assertIn(0,visible)
+            self.assertIn(15,visible)
+            # Gun fills center lower half but not the whole screen.
+            self.assertGreater(sum(v is not None for v in pix.values()), 250)
+            self.assertIsNone(painter(0,0,"A"))
+            self.assertIsNotNone(painter(32,35,"A"))
+
+    def test_pistol_and_shotgun_animation_frames_differ(self):
+        self.assertNotEqual(
+            [draw_pistol(x,y,"A") for x in range(64) for y in range(64)],
+            [draw_pistol(x,y,"B") for x in range(64) for y in range(64)])
+        self.assertNotEqual(
+            [draw_shotgun(x,y,"A") for x in range(64) for y in range(64)],
+            [draw_shotgun(x,y,"C") for x in range(64) for y in range(64)])
+
+    def test_generated_gun_posts_preserve_anchor_and_parse(self):
+        original=patch(w=36,h=48)
+        for painter in (draw_pistol,draw_shotgun):
+            for frame in ("A","B","C"):
+                def draw(x,y):
+                    return painter(x,y,frame)
+                created=raster_patch(original,draw,self.mapping,
+                                     parse_patch_pixels)
+                self.assertEqual(created[:8],original[:8])
+                parsed=parse_patch_pixels(created)
+                self.assertIsNotNone(parsed)
+                self.assertTrue(parsed[2])
+                self.assertTrue(all(0 <= v < 256
+                                    for _,v in parsed[2].values()))
+
     def test_patch_binary_valid_and_same_anchor(self):
         original=patch()
         created=raster_patch(original,draw_medkit,self.mapping,parse_patch_pixels)
@@ -70,7 +107,10 @@ class TestArt(unittest.TestCase):
             ("PNAMES",pnames),("TEXTURE1",t1),
             ("WALLP",patch()),("DOORP",patch()),
             ("S_START",b""),("MEDIA0",patch()),
-            ("ARM1A0",patch()),("ARM2A0",patch()),("S_END",b""),
+            ("ARM1A0",patch()),("ARM2A0",patch()),
+            ("PISGA0",patch()),("PISGB0",patch()),("PISGC0",patch()),
+            ("SHTGA0",patch()),("SHTGB0",patch()),("SHTGC0",patch()),
+            ("PISFA0",patch()),("SHTFA0",patch()),("S_END",b""),
             ("TITLEPIC",b"title untouched"),
             ("DEMO1",b"gameplay untouched")
         ])
@@ -80,8 +120,17 @@ class TestArt(unittest.TestCase):
         new_order,new=wad_lumps(final)
         self.assertEqual([x[0] for x in old_order],[x[0] for x in new_order])
         modified={k for k in old if old[k]!=new[k]}
-        self.assertEqual(modified,{b"WALLP",b"DOORP",b"MEDIA0",b"ARM1A0",b"ARM2A0"})
-        self.assertEqual(stats["modified_lumps"],5)
+        self.assertEqual(modified,{
+            b"WALLP",b"DOORP",b"MEDIA0",b"ARM1A0",b"ARM2A0",
+            b"PISGA0",b"PISGB0",b"PISGC0",
+            b"SHTGA0",b"SHTGB0",b"SHTGC0",
+        })
+        self.assertEqual(stats["modified_lumps"],11)
+        # Current muzzle flashes deliberately stay unchanged.
+        self.assertEqual(old[b"PISFA0"],new[b"PISFA0"])
+        self.assertEqual(old[b"SHTFA0"],new[b"SHTFA0"])
+        self.assertIn("pistol frames",stats)
+        self.assertIn("shotgun frames",stats)
         for keep in (b"COLORMAP",b"TITLEPIC",b"DEMO1",b"TEXTURE1",b"PNAMES"):
             self.assertEqual(old[keep],new[keep])
         for name in modified:
