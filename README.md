@@ -353,3 +353,27 @@ textures, the title, HUD and game logic stay the same. Run
 startup, and use the usual shotgun pickup or cheat to examine its
 animation. The tests validate all generated DOOM patch posts and
 that the underlying sprite anchors stay identical.
+
+
+## E1M1 map-driven full-wall redesign
+
+The first Art releases only replaced the first matching STARTAN wall patch
+and a door, which left most real E1M1 walls unchanged. The new
+`tandy_art.py` generator reads the shareware E1M1
+**7-byte compressed SIDEDEFS** and ordered compact `TEXTURE1`
+directory, ranks the most frequently referenced wall texture IDs,
+and redraws up to **36 actual E1M1 texture names** plus their DOOM
+patch resources. These are bold 16-color originals: green technical
+plates, gray metal/stone masonry, brown brick, bright computer
+monitors, industrial support pillars, hazard bands and obvious doors.
+They are distinct material categories, not a universal green filter.
+Original light lookup tables, weapon sprites and HUD data are unchanged.
+
+`ART.TXT` reports the exact selected E1M1 textures, wall-patch
+replacements and sidedef coverage. Source artwork is drawn into each
+existing wall patch's original post spans and offsets so file compatibility
+and the renderer remain unchanged. All processing happens offline.
+This is still experimental and *only* enabled with
+`-textures art`. It is a visible wholesale material redesign,
+not the prior 285-pixel speckle cleanup. The 7 MHz Tandy's physical
+performance and presentation need separate verification.

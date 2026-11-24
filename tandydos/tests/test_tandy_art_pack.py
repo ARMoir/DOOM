@@ -7,7 +7,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from prepare import HEADER, ENTRY, wad_lumps, parse_patch_pixels
 from tandy_art import (raster_patch, source_codes, draw_medkit, draw_armor,
                        draw_green_wall, draw_exit_door, draw_pistol,
-                       draw_shotgun, build_tandy_art_wad)
+                       draw_shotgun, build_tandy_art_wad,
+                       e1m1_wall_texture_uses, texture_art_style)
 
 def patch(w=24,h=24,value=0x22):
     out=bytearray(struct.pack("<hhhh",w,h,0,0)+b"\0"*(w*4))
@@ -94,6 +95,34 @@ class TestArt(unittest.TestCase):
         self.assertEqual(original[:8+4*24],created[:8+4*24])
         self.assertEqual(parse_patch_pixels(original)[2].keys(),
                          parse_patch_pixels(created)[2].keys())
+
+    def test_e1m1_sidedef_texture_frequency(self):
+        def tex(name,idx):
+            return (name.encode().ljust(8,b"\0") +
+                    struct.pack("<HHH",64,64,1) +
+                    struct.pack("<hhh",0,0,idx))
+        # index 0 is no texture; 1 green, 2 brown, 3 stone
+        names = ["-", "STARTAN1", "BROWN1", "GRAY4"]
+        offsets = [4+4*len(names)+20*i for i in range(len(names))]
+        texdata = struct.pack("<I",len(names)) + b"".join(
+            struct.pack("<I",v) for v in offsets)
+        for i,name in enumerate(names):
+            texdata += tex(name,0)
+        side = lambda a,b,c: struct.pack("<hBbbbB",0,0,a,b,c,0)
+        source = wad([("TEXTURE1",texdata),
+                      ("E1M1",b""),("THINGS",b""),("LINEDEFS",b""),
+                      ("SIDEDEFS",side(1,2,0)*4+side(3,1,0)*3),
+                      ("SEGS",b""),("SSECTORS",b"")])
+        order,lumps=wad_lumps(source)
+        found=e1m1_wall_texture_uses(source,order,lumps)
+        self.assertEqual(found,{"STARTAN1":7,"BROWN1":4,"GRAY4":3})
+
+    def test_semantic_materials_not_uniform_green(self):
+        styles={texture_art_style(n)[0] for n in
+                ("STARTAN1","COMP2","GRAY4","BROWN1","BIGDOOR1",
+                 "SUPPORT2","LITE2","OTHER")}
+        self.assertEqual(len(styles),8)
+
     def test_art_wad_changes_only_five_targets(self):
         pnames=struct.pack("<I",2)+b"WALLP\0\0\0"+b"DOORP\0\0\0"
         # Doom8088 compact TEXTURE1: 14-byte header, 6-byte patch.
@@ -105,6 +134,8 @@ class TestArt(unittest.TestCase):
         original=wad([
             ("COLORMAP",bytes(range(256))*34),
             ("PNAMES",pnames),("TEXTURE1",t1),
+            ("E1M1",b""),("THINGS",b""),("LINEDEFS",b""),
+            ("SIDEDEFS",struct.pack("<hBbbbB",0,0,1,1,1,0)),
             ("WALLP",patch()),("DOORP",patch()),
             ("S_START",b""),("MEDIA0",patch()),
             ("ARM1A0",patch()),("ARM2A0",patch()),

@@ -256,6 +256,212 @@ def draw_shotgun(x, y, frame="A"):
     return None
 
 
+
+def draw_stone_wall(x, y, brown=False, salt=0):
+    """Uncluttered industrial masonry with large staggered blocks."""
+    base = 6 if brown else 8
+    highlight = 14 if brown else 15
+    shadow = 0
+    face = 6 if brown else 7
+    # 2 or 3 wide blocks per course, obvious at 30-column rendering.
+    course = y // 17
+    offset = 11 if (course & 1) else 0
+    within = (x + offset + salt % 7) % 27
+    if y % 17 in (0, 1, 16) or within in (0, 1):
+        return shadow
+    if y % 17 in (2, 3) or within in (2, 3):
+        return highlight
+    if y % 17 >= 13:
+        return base
+    if (course + (x+offset)//27) % 3 == 0:
+        return face
+    return base
+
+
+def draw_control_wall(x, y, salt=0):
+    """Big DOOM/UAC computer screens and clearly separated control banks."""
+    if x < 3 or x >= 61 or y < 3 or y >= 60:
+        return 0
+    if x in (3, 60) or y in (3, 59):
+        return 8
+    # Main green console and blue diagnostic display.
+    if 10 <= y < 38:
+        if x in (8, 9, 31, 32, 54, 55) or y in (10, 37):
+            return 15
+        if 10 <= x < 30 or 34 <= x < 54:
+            if y in (14, 15) or (x % 12 == 0 and y < 20):
+                return 10
+            if (x - (10 if x < 30 else 34)) % 9 <= 1 and y >= 25:
+                return 2
+            return 1 if x < 30 else 0
+    if y in (41, 42, 56):
+        return 0
+    if 44 <= y < 55:
+        # A few large indicator buttons, not tiny pixel noise.
+        if 12 <= x < 20 or 27 <= x < 35 or 43 <= x < 51:
+            return 14 if y < 48 else 4
+        return 8
+    return 2
+
+
+def draw_support_wall(x, y, salt=0):
+    """Heavy black/gray industrial beam with broad silver specular edges."""
+    if x < 5 or x >= 59:
+        return 0
+    if x in (5, 6, 56, 57):
+        return 15
+    if x in (9, 10, 28, 29, 52, 53):
+        return 0
+    if x in (11, 12, 30, 31, 50, 51):
+        return 8
+    if y % 24 in (0, 1):
+        return 0
+    if y % 24 in (2, 3):
+        return 7
+    if y in (15, 47) and 16 < x < 49:
+        return 14
+    return 8 if (x // 11) % 2 else 7
+
+
+def draw_warning_wall(x, y, salt=0):
+    """Large DOOM hazard chevrons and thick steel guard rails."""
+    if y < 12 or y >= 53:
+        return 8
+    if y in (12, 13, 50, 51, 52):
+        return 0
+    if 17 <= y < 36:
+        return 14 if ((x // 10 + y // 10) & 1) else 0
+    if y in (37, 38):
+        return 15
+    return 6 if (x//15)%2 else 8
+
+
+def draw_industrial_wall(x, y, salt=0):
+    """Bold, mostly blue-gray metal plates rather than noisy wallpaper."""
+    if x % 32 in (0, 1) or y % 32 in (0, 1):
+        return 0
+    if x % 32 in (2, 3) or y % 32 in (2, 3):
+        return 15
+    if x % 32 >= 29 or y % 32 >= 29:
+        return 8
+    if x % 32 in (9, 10, 24, 25) and y % 32 in (10, 11, 23, 24):
+        return 0
+    return 7 if ((x//32 + y//32 + salt) % 3) else 8
+
+
+def texture_art_style(name):
+    """Keep Doom's material hierarchy; original pixels are newly drawn."""
+    upper = name.upper()
+    if "DOOR" in upper or "EXIT" in upper:
+        return "exit", draw_exit_door
+    if any(k in upper for k in ("COMP", "TEK", "COMPUT", "COMPS")):
+        return "computer", draw_control_wall
+    if any(k in upper for k in ("STARTAN", "STARG", "STAN", "GREEN")):
+        return "green", draw_green_wall
+    if any(k in upper for k in ("BRICK", "BROWN", "WOOD", "GSTONE")):
+        return "brown", lambda x,y,s=0: draw_stone_wall(x,y,True,s)
+    if any(k in upper for k in ("STONE", "GRAY", "SHAWN", "MARBLE", "ROCK")):
+        return "stone", lambda x,y,s=0: draw_stone_wall(x,y,False,s)
+    if any(k in upper for k in ("SUPPORT", "METAL", "PIPE", "SILVER")):
+        return "support", draw_support_wall
+    if any(k in upper for k in ("LITE", "LAMP", "SLAD", "HAZARD", "STEP")):
+        return "warning", draw_warning_wall
+    return "industrial", draw_industrial_wall
+
+
+def e1m1_wall_texture_uses(wad, order, lumps):
+    """Read the actual Doom8088 E1M1 compact SIDEDEFS (7 bytes each).
+
+    Each sidedef holds three signed 8-bit texture indices matching the
+    ordered TEXTURE1 directory (0 means no texture). This avoids
+    guessing which wall material the real EX is currently drawing.
+    """
+    texture_data = lumps.get(b"TEXTURE1")
+    if not texture_data or len(texture_data) < 4:
+        raise ValueError("Art pack cannot locate TEXTURE1")
+    total = struct.unpack_from("<I", texture_data)[0]
+    if total > (len(texture_data)-4)//4:
+        raise ValueError("Invalid TEXTURE1 directory")
+    names = []
+    for i in range(total):
+        pos = struct.unpack_from("<I", texture_data, 4 + i*4)[0]
+        if pos + 8 > len(texture_data):
+            raise ValueError("Invalid TEXTURE1 name offset")
+        names.append(texture_data[pos:pos+8].rstrip(b"\0").decode("ascii", "replace"))
+    marker = next((i for i,(name,_,_) in enumerate(order)
+                   if name.rstrip(b"\0") == b"E1M1"), None)
+    if marker is None or marker + 3 >= len(order):
+        raise ValueError("Cannot locate Doom shareware E1M1 SIDEDEFS")
+    name, off, length = order[marker+3]
+    if name.rstrip(b"\0") != b"SIDEDEFS" or length % 7:
+        raise ValueError("E1M1 SIDEDEFS not in compact seven-byte format")
+    used = {}
+    for offset in range(off, off+length, 7):
+        # int16 textureoffset, byte rowoffset, signed char top/bottom/mid,
+        # byte sector index.
+        for texture_id in struct.unpack_from("<bbb", wad, offset+3):
+            if 0 < texture_id < len(names):
+                name = names[texture_id]
+                used[name] = used.get(name, 0) + 1
+    if not used:
+        raise ValueError("No valid E1M1 wall texture references found")
+    return used
+
+
+def redraw_e1m1_walls(wad, order, lumps, source, parse_patch_pixels,
+                      already_changed, limit=36):
+    """Redraw E1M1's most-used wall textures and every underlying patch.
+
+    Skip shared previously converted patches; don't touch sprite lumps,
+    raw HUD or COLORMAP. Max 36 texture names prevents scope creep.
+    A separate ART.TXT lists exact map use and replacements for review.
+    """
+    frequency = e1m1_wall_texture_uses(wad, order, lumps)
+    grouped = {}
+    for texture, patch in candidate_patches(lumps):
+        grouped.setdefault(texture, []).append(patch)
+    changed = {}
+    selected = []
+    covered = 0
+    for texture,count in sorted(frequency.items(),
+                                key=lambda kv: (-kv[1],kv[0]))[:limit]:
+        patches = grouped.get(texture, [])
+        if not patches:
+            continue
+        style, artist = texture_art_style(texture)
+        applied = []
+        for patch in patches:
+            if patch in already_changed or patch in changed:
+                continue
+            blob = lumps.get(patch)
+            if parse_patch_pixels(blob) is None:
+                continue
+            # Draw simple, original art into pre-existing DOOM patch posts.
+            # Unique, deterministic material variants across different
+            # texture names without any on-device sampling or filters.
+            salt = sum(texture.encode("ascii", "replace")) % 11
+            def pixel(x,y,artist=artist,salt=salt):
+                return artist(x,y,salt) if artist not in (
+                    draw_green_wall, draw_exit_door) else artist(x,y)
+            changed[patch] = raster_patch(
+                blob, pixel, source, parse_patch_pixels,
+                preserve_coverage=True)
+            applied.append(patch.decode("ascii", "replace"))
+        if applied or all(p in already_changed or p in changed for p in patches):
+            covered += count
+            selected.append("%s(%d,%s):%s" % (texture,count,style,
+                            ",".join(applied) if applied else "shared"))
+    return changed, {
+        "e1m1_wall_uses": sum(frequency.values()),
+        "e1m1_wall_textures": len(frequency),
+        "e1m1_selected_textures": len(selected),
+        "e1m1_rewritten_wall_patches": len(changed),
+        "e1m1_sidedef_coverage_percent":
+            round(100*covered/max(1,sum(frequency.values())),1),
+        "e1m1_reworked": "; ".join(selected)
+    }
+
+
 def raster_patch(original, pixel_func, source, parse_patch_pixels,
                  preserve_coverage=False):
     """Write valid DOOM column posts, keeping dimensions and sprite anchor.
@@ -300,7 +506,7 @@ def raster_patch(original, pixel_func, source, parse_patch_pixels,
 
 def build_tandy_art_wad(classic_wad, wad_lumps, parse_patch_pixels,
                         header, entry):
-    """Replace two world patches, pickup sprites and first-person weapons.
+    """Replace actual E1M1 wall textures, pickups and first-person weapons.
 
     No new texture names, sprite names, maps, colormaps, HUD, title or
     gameplay code. Output stays an IWAD with identical lump directory.
@@ -338,6 +544,15 @@ def build_tandy_art_wad(classic_wad, wad_lumps, parse_patch_pixels,
                                      preserve_coverage=True)
         used.add(name)
         details[label] = texture + " -> " + name.decode("ascii","replace")
+
+    # Redesign the walls the E1M1 level actually references, not
+    # whichever STARTAN patch happens to appear first in TEXTURE1.
+    # This is the central difference from the Build #25 tiny art test.
+    world_changes, world_details = redraw_e1m1_walls(
+        classic_wad, order, lumps, source, parse_patch_pixels,
+        set(changes), limit=36)
+    changes.update(world_changes)
+    details.update(world_details)
 
     sprite_names = set()
     in_sprites = False

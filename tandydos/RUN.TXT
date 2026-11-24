@@ -131,3 +131,10 @@ The pistol is visible immediately at E1M1 startup with:
   DOOM -tandy -textures art
 Weapon animation timing, anchor positions and muzzle flashes are
 unchanged. Original Classic and Clean texture WADs remain available.
+
+E1M1 WALL REDESIGN:
+The Art profile now targets the most-used E1M1 wall textures from the
+actual map's SIDEDEFS (not just one arbitrary STARTAN patch).
+New bold tech panels, computer banks, masonry, doors and hazard strips.
+Check ART.TXT for affected texture names and reference coverage.
+Classic and Clean remain unchanged. DOOMTA.WAD is the experimental art.
